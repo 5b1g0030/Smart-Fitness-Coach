@@ -1,0 +1,10 @@
+== 虛擬環境 ==
+
+建立: python -m venv venv
+啟動: .\venv\Scripts\activate
+退出: deactivate
+
+** 僅Windows適用 **
+
+== 執行前安裝 ==
+python -m pip install opencv-python mediapipe numpy
