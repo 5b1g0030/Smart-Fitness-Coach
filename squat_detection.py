@@ -28,13 +28,16 @@ def calculate_angle(a, b, c):
     return angle
 
 # ===== 判斷是否為深蹲姿勢 =====
-def is_squat_pose(landmarks, frame_width, frame_height):
-    """
-    判斷是否為深蹲姿勢
-    landmarks: MediaPipe檢測到的關鍵點
-    frame_width, frame_height: 影像寬度和高度
-    返回: True(深蹲) 或 False(非深蹲)
-    """
+# landmarks => MediaPipe檢測到的關鍵點
+# frame_width, frame_height => 影像寬度和高度
+# 返回 => True(深蹲) 或 False(非深蹲)
+# 流程:
+# 1. 取得關鍵點座標（轉換為像素座標，包括臀部、膝蓋、腳踝）
+# 2. 計算膝蓋角度
+# 3. 深蹲條件判斷
+# 4. 返回結果 
+# ============================= 
+def is_squat_pose(landmarks, frame_width, frame_height, mp_pose):
     try:
         # 取得關鍵點座標（轉換為像素座標）
         # 左側關鍵點
@@ -71,78 +74,8 @@ def is_squat_pose(landmarks, frame_width, frame_height):
         # 如果計算過程出錯，返回False
         return False, 0, 0
 
-# ===== 初始化 MediaPipe =====
-# mp_pose => 姿勢偵測模組
-# mp_drawing => 繪圖工具模組
-# ============================ 
-mp_pose = mp.solutions.pose
-mp_drawing = mp.solutions.drawing_utils
-
-# ===== 設定姿勢檢測 =====
-pose = mp_pose.Pose(
-    min_detection_confidence=0.5,  # 最小檢測信心度
-    min_tracking_confidence=0.5    # 最小追蹤信心度
-)
-
-# ===== 初始化攝像頭 ======
-# cv2.VideoCapture(0) => 使用預設後端(有可能使用到不適合的系統)
-# cv2.VideoCapture(0, cv2.【系統參數】) => 可以指定適合的系統 
-# Windows => CAP_DSHOW(推薦), CAP_MSMF
-# macOS => CAP_AVFOUNDATION(推薦)
-# Linux => CAP_V4L2(推薦), CAP_GSTREAMER
-# ======================== 
-cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-
-# ===== 設定攝像頭解析度 (可選) ======
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 920) # 畫面寬度
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 540) # 畫面高度
-cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG')) # 用 MJPG 編碼，減少延遲
-
-print("按 'q' 鍵退出程式") # 提示字
-print("深蹲時膝蓋角度需小於120度才會顯示'深蹲'") # 深蹲判斷說明
-
-# ===== 開始偵測 =====
-# 1. 讀取鏡頭畫面
-# 2. 檢查有無讀取到畫面
-# 3. 畫面左右顛倒
-# 4. 轉換顏色格式
-# 5. 進行姿勢檢測
-# 6. 檢查是否檢測到姿勢
-# 7. 判斷深蹲姿勢
-# 8. 繪製骨架和關鍵點
-# 9. 顯示畫面
-# ==================== 
-while cap.isOpened():
-
-    # ----- 讀取攝像頭畫面 -----
-    # ret => 布林值，表示是否成功讀取到影像
-    # frame => Numpy 陣列，讀取到的影像資料(如果 ret 是 False，frame 會是 None)
-    # ------------------------- 
-    ret, frame = cap.read() 
-    
-    # ----- 檢查有無讀取到畫面 -----
-    if not ret:
-        print("無法讀取攝像頭")
-        break # 跳出迴圈(不繼續以下流程)
-    
-    # ----- 畫面左右顛倒 -----
-    # 鏡像效果，符合使用者視角
-    # 參數補充:
-    # 1 => 水平翻轉
-    # 0 => 垂直翻轉
-    # -1 => 水平垂直翻轉
-    # ----------------------- 
-    frame = cv2.flip(frame, 1)
-    
-    # ----- 轉換顏色格式 -----
-    # BGR -> RGB，MediaPipe需要RGB格式
-    # -----------------------
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    
-    # ----- 進行姿勢檢測 -----
-    results = pose.process(rgb_frame)
-    
-    # ----- 檢查是否檢測到姿勢 -----
+# ----- 檢查是否檢測到姿勢並繪製骨架 -----
+def draw_pose_info(frame, results, mp_pose, mp_drawing):
     if results.pose_landmarks:
         # 繪製關鍵點和骨架
         mp_drawing.draw_landmarks(
@@ -158,7 +91,7 @@ while cap.isOpened():
         h, w, _ = frame.shape # 影像高度、影像寬度、色彩通道數(不會用到)
         
         # ----- 判斷深蹲姿勢 -----
-        is_squat, left_angle, right_angle = is_squat_pose(landmarks, w, h)
+        is_squat, left_angle, right_angle = is_squat_pose(landmarks, w, h, mp_pose)
         
         if is_squat:
             # 在畫面左上角顯示「深蹲」
@@ -209,20 +142,108 @@ while cap.isOpened():
         # 沒有檢測到姿勢
         cv2.putText(frame, "No Pose Detected", (10, 50), 
                    cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 3)
-    
-    # ----- 顯示畫面 -----
-    # 視窗名稱、影像
-    # ------------------- 
-    cv2.imshow('Squat posture detection', frame)
-    
-    # 按 'q' 鍵退出 
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
 
-# 釋放資源
-cap.release() # 釋放攝像頭資源，讓攝像頭可以被其他程式使用
-cv2.destroyAllWindows() # 關閉所有由 OpenCV 開啟的視窗，清理顯示資源
-pose.close() # 關閉 MediaPipe 的姿勢偵測器，釋放相關資源
+# ===== 開始偵測 =====
+# 1. 讀取鏡頭畫面
+# 2. 檢查有無讀取到畫面
+# 3. 畫面左右顛倒
+# 4. 轉換顏色格式
+# 5. 進行姿勢檢測
+# 6. 檢查是否檢測到姿勢
+# 7. 判斷深蹲姿勢
+# 8. 繪製骨架和關鍵點
+# 9. 顯示畫面
+# ==================== 
+def start_detection(cap, pose, mp_pose, mp_drawing):
+    while cap.isOpened():
 
-# 結束訊息
-print("程式結束")
+        # ----- 讀取攝像頭畫面 -----
+        # ret => 布林值，表示是否成功讀取到影像
+        # frame => Numpy 陣列，讀取到的影像資料(如果 ret 是 False，frame 會是 None)
+        # ------------------------- 
+        ret, frame = cap.read() 
+        
+        # ----- 檢查有無讀取到畫面 -----
+        if not ret:
+            print("無法讀取攝像頭")
+            break # 跳出迴圈(不繼續以下流程)
+        
+        # ----- 畫面左右顛倒 -----
+        # 鏡像效果，符合使用者視角
+        # 參數補充:
+        # 1 => 水平翻轉
+        # 0 => 垂直翻轉
+        # -1 => 水平垂直翻轉
+        # ----------------------- 
+        frame = cv2.flip(frame, 1)
+        
+        # ----- 轉換顏色格式 -----
+        # BGR -> RGB，MediaPipe需要RGB格式
+        # -----------------------
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # ----- 進行姿勢檢測 -----
+        results = pose.process(rgb_frame)
+        
+        # ----- 姿勢判斷與繪製骨架 -----
+        if results.pose_landmarks:
+            draw_pose_info(frame, results, mp_pose, mp_drawing)
+        else:
+            # 沒有檢測到姿勢
+            cv2.putText(frame, "No Pose Detected", (10, 50), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 3)
+        
+        # ----- 顯示畫面 -----
+        # 視窗名稱、影像
+        # ------------------- 
+        cv2.imshow('Squat posture detection', frame)
+        
+        # 按 'q' 鍵退出 
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+
+def main():
+    # ===== 初始化 MediaPipe =====
+    # mp_pose => 姿勢偵測模組
+    # mp_drawing => 繪圖工具模組
+    # ============================ 
+    mp_pose = mp.solutions.pose
+    mp_drawing = mp.solutions.drawing_utils
+
+    # ===== 設定姿勢檢測 =====
+    pose = mp_pose.Pose(
+        min_detection_confidence=0.5,  # 最小檢測信心度
+        min_tracking_confidence=0.5    # 最小追蹤信心度
+    )
+
+    # ===== 初始化攝像頭 ======
+    # cv2.VideoCapture(0) => 使用預設後端(有可能使用到不適合的系統)
+    # cv2.VideoCapture(0, cv2.【系統參數】) => 可以指定適合的系統 
+    # Windows => CAP_DSHOW(推薦), CAP_MSMF
+    # macOS => CAP_AVFOUNDATION(推薦)
+    # Linux => CAP_V4L2(推薦), CAP_GSTREAMER
+    # ======================== 
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+
+    # ===== 設定攝像頭解析度 (可選) ======
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 920) # 畫面寬度
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 540) # 畫面高度
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG')) # 用 MJPG 編碼，減少延遲
+
+    print("按 'q' 鍵退出程式") # 提示字
+    print("深蹲時膝蓋角度需小於120度才會顯示'深蹲'") # 深蹲判斷說明
+
+    # ===== 開始偵測 =====
+    start_detection(cap, pose, mp_pose, mp_drawing)
+
+    # ===== 釋放資源 =====
+    cap.release() # 釋放攝像頭資源，讓攝像頭可以被其他程式使用
+    cv2.destroyAllWindows() # 關閉所有由 OpenCV 開啟的視窗，清理顯示資源
+    pose.close() # 關閉 MediaPipe 的姿勢偵測器，釋放相關資源
+
+    # 結束訊息
+    print("程式結束")
+
+if __name__ == '__main__':
+    main()
