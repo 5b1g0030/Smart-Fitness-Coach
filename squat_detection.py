@@ -1,6 +1,75 @@
 import cv2              # 存取攝像頭、讀取和顯示影像、處理影像（如翻轉、加文字等）
 import mediapipe as mp  # 進行人體姿勢偵測，提供關鍵點座標、繪製骨架等功能 
 import numpy as np      # 數值運算、陣列處理，方便影像或座標資料的計算與操作
+import math             # 數學函數，用於角度計算
+
+# ===== 計算角度的函數 =====
+# 計算三個點形成的角度
+# a => 第一個點座標 (x, y)
+# b => 頂點座標 (x, y) 
+# c => 第三個點座標 (x, y)
+# 返回角度值（度數）
+# =========================  
+def calculate_angle(a, b, c):
+
+    # 將座標轉換為numpy陣列
+    a = np.array(a)
+    b = np.array(b) 
+    c = np.array(c)
+    
+    # 計算向量
+    radians = np.arctan2(c[1] - b[1], c[0] - b[0]) - np.arctan2(a[1] - b[1], a[0] - b[0])
+    angle = np.abs(radians * 180.0 / np.pi)
+    
+    # 確保角度在0-180度之間
+    if angle > 180.0:
+        angle = 360 - angle
+        
+    return angle
+
+# ===== 判斷是否為深蹲姿勢 =====
+def is_squat_pose(landmarks, frame_width, frame_height):
+    """
+    判斷是否為深蹲姿勢
+    landmarks: MediaPipe檢測到的關鍵點
+    frame_width, frame_height: 影像寬度和高度
+    返回: True(深蹲) 或 False(非深蹲)
+    """
+    try:
+        # 取得關鍵點座標（轉換為像素座標）
+        # 左側關鍵點
+        left_hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x * frame_width,
+                   landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y * frame_height]
+        left_knee = [landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].x * frame_width,
+                    landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y * frame_height]
+        left_ankle = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x * frame_width,
+                     landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y * frame_height]
+        
+        # 右側關鍵點
+        right_hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x * frame_width,
+                    landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y * frame_height]
+        right_knee = [landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].x * frame_width,
+                     landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].y * frame_height]
+        right_ankle = [landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].x * frame_width,
+                      landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].y * frame_height]
+        
+        # 計算膝蓋角度
+        left_knee_angle = calculate_angle(left_hip, left_knee, left_ankle)
+        right_knee_angle = calculate_angle(right_hip, right_knee, right_ankle)
+        
+        # 深蹲判斷條件：
+        # 1. 膝蓋彎曲角度小於120度（可調整）
+        # 2. 左右膝蓋角度都符合條件
+        squat_threshold = 120  # 深蹲閾值角度
+        
+        if left_knee_angle < squat_threshold and right_knee_angle < squat_threshold:
+            return True, left_knee_angle, right_knee_angle
+        else:
+            return False, left_knee_angle, right_knee_angle
+            
+    except:
+        # 如果計算過程出錯，返回False
+        return False, 0, 0
 
 # ===== 初始化 MediaPipe =====
 # mp_pose => 姿勢偵測模組
@@ -30,6 +99,7 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 540) # 畫面高度
 cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG')) # 用 MJPG 編碼，減少延遲
 
 print("按 'q' 鍵退出程式") # 提示字
+print("深蹲時膝蓋角度需小於120度才會顯示'深蹲'") # 深蹲判斷說明
 
 # ===== 開始偵測 =====
 # 1. 讀取鏡頭畫面
@@ -38,8 +108,9 @@ print("按 'q' 鍵退出程式") # 提示字
 # 4. 轉換顏色格式
 # 5. 進行姿勢檢測
 # 6. 檢查是否檢測到姿勢
-# 7. 繪製骨架和關鍵點
-# 8. 顯示畫面
+# 7. 判斷深蹲姿勢
+# 8. 繪製骨架和關鍵點
+# 9. 顯示畫面
 # ==================== 
 while cap.isOpened():
 
@@ -86,6 +157,24 @@ while cap.isOpened():
         landmarks = results.pose_landmarks.landmark
         h, w, _ = frame.shape # 影像高度、影像寬度、色彩通道數(不會用到)
         
+        # ----- 判斷深蹲姿勢 -----
+        is_squat, left_angle, right_angle = is_squat_pose(landmarks, w, h)
+        
+        if is_squat:
+            # 在畫面左上角顯示「深蹲」
+            cv2.putText(frame, "squats", (10, 50), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 3)
+        else:
+            # 在畫面左上角顯示「站立」
+            cv2.putText(frame, "Standing", (10, 50), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 0), 3)
+        
+        # 顯示角度資訊（除錯用）
+        cv2.putText(frame, f"Left knee angle: {int(left_angle)} angle", (10, 100), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        cv2.putText(frame, f"Right knee angle: {int(right_angle)} angle", (10, 130), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        
         # --- 顯示一些重要關鍵點的座標資訊 ---
         # 左右肩膀
         left_shoulder = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value]
@@ -109,22 +198,22 @@ while cap.isOpened():
         # (0, 255, 0)：文字顏色（BGR格式，這裡是綠色）。
         # 2：文字線條粗細。
         # -------------------------- 
-        cv2.putText(frame, "Pose Detected", (10, 30), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        cv2.putText(frame, "Pose Detected", (10, h-20), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         
         # 顯示關鍵點數量
-        cv2.putText(frame, f"Landmarks: {len(landmarks)}", (10, 70), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(frame, f"Landmarks: {len(landmarks)}", (10, h-50), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
     
     else:
         # 沒有檢測到姿勢
-        cv2.putText(frame, "No Pose Detected", (10, 30), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        cv2.putText(frame, "No Pose Detected", (10, 50), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 3)
     
     # ----- 顯示畫面 -----
     # 視窗名稱、影像
     # ------------------- 
-    cv2.imshow('MediaPipe Pose Detection', frame)
+    cv2.imshow('Squat posture detection', frame)
     
     # 按 'q' 鍵退出 
     if cv2.waitKey(1) & 0xFF == ord('q'):
