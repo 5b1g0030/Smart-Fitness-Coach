@@ -7,4 +7,4 @@
 ** 僅Windows適用 **
 
 == 執行前安裝 ==
-python -m pip install opencv-python mediapipe numpy
+python -m pip install opencv-python mediapipe numpy dtw-python
