@@ -7,8 +7,8 @@ import os               # 用於檔案和路徑操作
 from scipy.spatial.distance import euclidean
 from dtw import dtw  # 需要安裝: pip install dtw-python
 
+# ===== 標準深蹲動作分析器(類別) =====
 class StandardSquatAnalyzer:
-    """標準深蹲動作分析器"""
     
     def __init__(self):
         """初始化標準動作分析器"""
@@ -112,30 +112,37 @@ class StandardSquatAnalyzer:
             
         return valgus_ratio
     
+    # ===== 分析標準深蹲影片，提取動作序列 =====
+    # 1. 檢查影片是否能正確讀取
+    # 2. 讀取影片
+    # 3. 轉換顏色格式
+    # 4. 進行姿勢檢測
+    # 5.  
     def analyze_standard_video(self, video_path):
-        """
-        分析標準深蹲影片，提取動作序列
-        """
+
         print(f"正在分析標準影片: {video_path}")
         
-        cap = cv2.VideoCapture(video_path)
+        # ----- 檢查影片是否能正確讀取 -----
+        cap = cv2.VideoCapture(video_path) # 取指定路徑的影片檔案
+        # 檢查影片是否成功開啟
         if not cap.isOpened():
-            raise Exception(f"無法開啟影片文件: {video_path}")
+            raise Exception(f"無法開啟影片文件: {video_path}") # 丟出例外（Exception），並顯示錯誤訊息
         
-        frame_count = 0
-        sequence = []
+        frame_count = 0 # 初始使化影格計數器，從 0 開始 
+        sequence = [] # 儲存每一幀分析得到的標準動作角度資料
         
         while cap.isOpened():
+            # ----- 讀取影片 -----
             ret, frame = cap.read()
             if not ret:
                 break
                 
             frame_count += 1
             
-            # 轉換顏色格式
+            # ----- 轉換顏色格式 -----
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             
-            # 進行姿勢檢測
+            # ----- 進行姿勢檢測 -----
             results = self.pose.process(rgb_frame)
             
             if results.pose_landmarks:
@@ -163,17 +170,20 @@ class StandardSquatAnalyzer:
         
         return sequence
     
-    def save_standard_sequence(self, filename):
-        """儲存標準動作序列到文件"""
+    # ===== 儲存標準動作序列到文件 =====
+    def save_standard_sequence(self, filename): 
         try:
+            # 以JSON格式寫入檔案
             with open(filename, 'w', encoding='utf-8') as f:
                 json.dump(self.standard_sequence, f, indent=2, ensure_ascii=False)
             print(f"標準動作序列已儲存到: {filename}")
-        except Exception as e:
+        # 例外處理
+        except Exception as e: 
             print(f"儲存標準序列時發生錯誤: {e}")
     
+    # ===== 從文件載入標準動作序列 ===== 
     def load_standard_sequence(self, filename):
-        """從文件載入標準動作序列"""
+        
         try:
             with open(filename, 'r', encoding='utf-8') as f:
                 self.standard_sequence = json.load(f)
@@ -183,11 +193,11 @@ class StandardSquatAnalyzer:
             print(f"載入標準序列時發生錯誤: {e}")
             return False
     
+    # ===== 清理資源 =====
     def cleanup(self):
-        """清理資源"""
         self.pose.close()
 
-
+# ===== 結合標準動作的深蹲檢測器(類別) =====
 class SquatDetectorWithStandard:
     """結合標準動作的深蹲檢測器"""
     
@@ -599,24 +609,31 @@ def camera_detection_mode(standard_sequence):
         detector.cleanup() # 關閉 MediaPipe 的姿勢偵測器，釋放相關資源
         cv2.destroyAllWindows() # 關閉所有由 OpenCV 開啟的視窗，清理顯示資源
 
-
+# ===== 分析標準深蹲影片模式 =====
+# 1. 輸入影片
+# 2. 檢查影片是否存在
+# 3.  
 def analyze_standard_video_mode():
-    """分析標準深蹲影片模式"""
+    
     print("\n=== 分析標準深蹲影片模式 ===")
     
+    # ----- 輸入影片 -----
+    # strip() => 去除使用者輸入內容前後的空白或換行，確保取得乾淨的路徑字串
+    # ------------------- 
     video_path = input("請輸入標準深蹲影片路徑: ").strip()
     if not video_path:
         print("未提供影片路徑，返回主選單")
         return None
     
+    # ----- 檢查影片是否存在 -----
     if not os.path.exists(video_path):
         print(f"影片文件不存在: {video_path}")
         return None
     
     try:
-        # 分析標準影片
-        analyzer = StandardSquatAnalyzer()
-        standard_sequence = analyzer.analyze_standard_video(video_path)
+        # ----- 分析標準影片 -----
+        analyzer = StandardSquatAnalyzer() # 引入「標準深蹲動作分析器(類別)」
+        standard_sequence = analyzer.analyze_standard_video(video_path) # 呼叫「」
         analyzer.cleanup()
         
         print("標準影片分析完成！")
@@ -626,37 +643,52 @@ def analyze_standard_video_mode():
         print(f"分析標準影片時發生錯誤: {e}")
         return None
 
-
+# ===== 測試影片分析模式 =====
+# 1. 檢查有沒有標準動作資料 
+# 2. 輸入影片
+# 3. 檢查影片是否存在
+# 4. 初始化影片讀取
+# 5. 檢查影片是否能讀取
+# 6. 初始化檢測器
+# 7. 獲取影片資訊
+# 8. 主要分析迴圈(...)
+# =========================== 
 def test_video_analysis_mode(standard_sequence):
-    """測試影片分析模式"""
+    
     print("\n=== 測試影片分析模式 ===")
     
+    # ----- 檢查有沒有標準動作資料 -----
     if not standard_sequence:
         print("錯誤：沒有標準動作資料，請先分析標準影片或載入標準動作資料")
         return
     
+    # ----- 輸入影片 -----
+    # strip() => 去除使用者輸入內容前後的空白或換行，確保取得乾淨的路徑字串
+    # ------------------- 
     video_path = input("請輸入測試影片路徑: ").strip()
     if not video_path:
         print("未提供影片路徑，返回主選單")
         return
     
+    # ----- 檢查影片是否存在 -----
     if not os.path.exists(video_path):
         print(f"影片文件不存在: {video_path}")
         return
     
-    # ===== 初始化影片讀取 =====
+    # ----- 初始化影片讀取 -----
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print(f"無法開啟測試影片: {video_path}")
         return
     
-    # 初始化檢測器
+    # ----- 初始化檢測器 -----
     detector = SquatDetectorWithStandard(
         standard_sequence=standard_sequence,
         squat_threshold=120,
         similarity_threshold=0.6
     )
     
+    # 文字提示
     print("\n使用說明：")
     print("- 程式將分析測試影片中的深蹲動作")
     print("- 會比較測試動作與標準動作的相似度")
@@ -666,22 +698,23 @@ def test_video_analysis_mode(standard_sequence):
     print("- 按空白鍵暫停/繼續播放")
     print("-" * 50)
     
-    # 獲取影片資訊
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    duration = total_frames / fps if fps > 0 else 0
+    # ----- 獲取影片資訊 -----
+    fps = cap.get(cv2.CAP_PROP_FPS) # 影片幀數
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) # 影片總幀數
+    duration = total_frames / fps if fps > 0 else 0 # 計算影片總時長（秒）
     
+    # 顯示影片資訊
     print(f"影片資訊：")
     print(f"- FPS: {fps:.2f}")
     print(f"- 總幀數: {total_frames}")
     print(f"- 時長: {duration:.2f}秒")
     print("-" * 50)
     
-    frame_count = 0
-    paused = False
+    frame_count = 0 # 初始化影格計時數器，已處理的影片影格數，從 0 開始
+    paused = False # 初始化暫停狀態，預設「未暫停」
     
     try:
-        # ===== 主要分析迴圈 =====
+        # ----- 主要分析迴圈 -----
         # detector => 深蹲檢測器實例
         # cap => 影片物件
         # 流程:
@@ -690,7 +723,8 @@ def test_video_analysis_mode(standard_sequence):
         # 3. 處理影格
         # 4. 顯示畫面和進度
         # 5. 處理按鍵事件
-        # ========================
+        # 6. 釋放資源並顯示結果 
+        # ------------------------
         while cap.isOpened():
             if not paused:
                 # ----- 讀取影片畫面 -----
@@ -706,39 +740,56 @@ def test_video_analysis_mode(standard_sequence):
                 
                 frame_count += 1
                 
-                # 處理影格（影片模式不需要鏡像）
+                # ----- 處理影格（影片模式不需要鏡像） -----
                 processed_frame = detector.process_frame(frame, mirror=False)
                 
-                # 在畫面上顯示進度資訊
+                # ----- 在畫面上顯示進度資訊 -----
                 progress = frame_count / total_frames * 100 if total_frames > 0 else 0
                 current_time = frame_count / fps if fps > 0 else 0
                 
+                # 顯示目前分析進度（百分比和秒數），方便使用者了解影片播放狀態
                 cv2.putText(processed_frame, f"Progress: {progress:.1f}% ({current_time:.1f}s/{duration:.1f}s)", 
                            (10, processed_frame.shape[0] - 60), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.5, (131,131,131), 2)
                 
+                # 顯示的提示文字，告訴使用者如何暫停或退出影片分析
                 cv2.putText(processed_frame, "Press 'p' or SPACE to pause, 'q' to quit", 
                            (10, processed_frame.shape[0] - 30), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.5, (131,131,131), 2)
+            
+            # ----- 縮放畫面 -----
+            # None => 目標尺寸（dsize），設為 None 代表用比例縮放，不直接指定寬高
+            # fx => 水平方向縮放比例(寬度)
+            # fy => 垂直方向縮放比例(高度)
+            # ------------------- 
+            scale = 0.6 # 畫面比例(原本的60%)
+            processed_frame = cv2.resize(processed_frame, None, fx=scale, fy=scale)
+            cv2.namedWindow('Video Squat Analysis', cv2.WINDOW_NORMAL)  # 讓視窗可調整大小
             
             # ----- 顯示畫面 -----
             # 視窗名稱、影像
             # -------------------
             cv2.imshow('Video Squat Analysis', processed_frame)
             
-            # 處理按鍵事件
+            # ----- 處理按鍵事件 -----
+            # fps => 影片每秒幀數
+            # if fps > 0 and not paused => 只有在影片有 fps 且沒暫停時，才用正常速度播放
+            # else 1：如果暫停或 fps 不正確，則每次只等待 1 毫秒（讓程式能即時處理按鍵）
+            # ----------------------- 
             wait_time = int(1000 / fps) if fps > 0 and not paused else 1
+
+            # ----- 等待使用者按鍵 -----
+            # wait_time => 暫停指定毫秒數 
+            # & 0xFF => 只取按鍵的低 8 位元（確保跨平台一致）
+            # ------------------------- 
             key = cv2.waitKey(wait_time) & 0xFF
             
-            if key == ord('q'):
-                # 按 'q' 鍵退出
+            if key == ord('q'): # 按 'q' 鍵退出
                 print("使用者按下 'q' 鍵，退出影片分析")
                 break
-            elif key == ord('r'):
-                # 按 'r' 鍵重設計數
+            elif key == ord('r'): # 按 'r' 鍵重設計數
                 detector.reset_counters()
-            elif key == ord('p') or key == ord(' '):
-                # 按 'p' 鍵或空白鍵暫停/繼續
+            elif key == ord('p') or key == ord(' '): # 按 'p' 鍵或空白鍵暫停/繼續
                 paused = not paused
                 if paused:
                     print("影片已暫停，按 'p' 或空白鍵繼續")
@@ -746,7 +797,7 @@ def test_video_analysis_mode(standard_sequence):
                     print("影片繼續播放")
     
     finally:
-        # ===== 釋放資源並顯示結果 =====
+        # ------ 釋放資源並顯示結果 -----
         print(f"影片分析結束")
         print(f"總深蹲次數: {detector.squat_count}")
         print(f"正確深蹲次數: {detector.correct_squat_count}")
@@ -804,8 +855,9 @@ def main():
                     print("請先選擇功能 2 分析標準影片，或選擇功能 4 載入現有資料")
                     continue
                 
-                camera_detection_mode(standard_sequence) # 呼叫「」
-                
+                camera_detection_mode(standard_sequence) # 呼叫「攝像頭即時檢測模式函式」
+
+            # 2.    
             elif choice == '2':
                 # 分析標準深蹲影片
                 result = analyze_standard_video_mode()
@@ -813,9 +865,10 @@ def main():
                     standard_sequence = result
                     print("標準動作資料已更新，現在可以使用其他功能了！")
                 
+            # 3. 輸入影片進行分析
             elif choice == '3':
                 # 測試影片分析
-                test_video_analysis_mode(standard_sequence)
+                test_video_analysis_mode(standard_sequence) # 呼叫「測試影片分析模式函式」
                 
             elif choice == '4':
                 # 載入現有的標準動作資料
