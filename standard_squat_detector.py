@@ -27,18 +27,24 @@ class StandardSquatAnalyzer:
         
         # 儲存標準動作序列
         self.standard_sequence = []
-        
+    
+    # ===== 提取關鍵角度；返回包含關鍵角度的字典 =====
+    # 1. 獲取關鍵點
+    # 2. 轉換座標(關鍵點 => 實際像素位置)
+    # 3. 計算關鍵角度
+    # ============================================= 
     def extract_key_angles(self, landmarks, frame_width, frame_height):
-        """
-        提取關鍵角度
-        返回包含關鍵角度的字典
-        """
+        
         try:
-            # 轉換座標
+            # ----- 轉換座標 -----
+            # 關鍵點座標（0~1）轉換成影像上的實際像素位置，方便後續角度計算或繪圖
+            # ------------------- 
             def get_coords(landmark):
                 return [landmark.x * frame_width, landmark.y * frame_height]
             
-            # 獲取關鍵點
+            # ----- 獲取關鍵點 -----
+            # 呼叫「轉換座標函式」
+            # --------------------- 
             left_shoulder = get_coords(landmarks[self.mp_pose.PoseLandmark.LEFT_SHOULDER.value])
             right_shoulder = get_coords(landmarks[self.mp_pose.PoseLandmark.RIGHT_SHOULDER.value])
             left_hip = get_coords(landmarks[self.mp_pose.PoseLandmark.LEFT_HIP.value])
@@ -48,7 +54,9 @@ class StandardSquatAnalyzer:
             left_ankle = get_coords(landmarks[self.mp_pose.PoseLandmark.LEFT_ANKLE.value])
             right_ankle = get_coords(landmarks[self.mp_pose.PoseLandmark.RIGHT_ANKLE.value])
             
-            # 計算關鍵角度
+            # ----- 計算關鍵角度 -----
+            # 這個字典會被用來分析每一幀的深蹲動作品質，並累積成「標準動作序列」或即時比對用的資料
+            # ----------------------- 
             angles = {
                 'left_knee_angle': self.calculate_angle(left_hip, left_knee, left_ankle),
                 'right_knee_angle': self.calculate_angle(right_hip, right_knee, right_ankle),
@@ -64,7 +72,7 @@ class StandardSquatAnalyzer:
             }
             
             return angles
-            
+        # 例外處理 
         except Exception as e:
             print(f"提取角度時發生錯誤: {e}")
             return None
@@ -117,7 +125,8 @@ class StandardSquatAnalyzer:
     # 2. 讀取影片
     # 3. 轉換顏色格式
     # 4. 進行姿勢檢測
-    # 5.  
+    # 5. 檢查是否偵測到人體
+    # 6. 儲存標準序列 
     def analyze_standard_video(self, video_path):
 
         print(f"正在分析標準影片: {video_path}")
@@ -145,14 +154,17 @@ class StandardSquatAnalyzer:
             # ----- 進行姿勢檢測 -----
             results = self.pose.process(rgb_frame)
             
+            # ----- 檢查是否偵測到人體 -----
             if results.pose_landmarks:
+                # 讀取影像
                 h, w, _ = frame.shape
-                angles = self.extract_key_angles(results.pose_landmarks.landmark, w, h)
+                # 根據偵測到的關鍵點座標計算各種關鍵角度（如膝蓋、髖關節、身體前傾等）
+                angles = self.extract_key_angles(results.pose_landmarks.landmark, w, h) # 呼叫「」
                 
                 if angles:
                     sequence.append(angles)
                     
-                    # 顯示分析進度（可選）
+                    # ----- 顯示分析進度（可選） -----
                     if frame_count % 10 == 0:
                         print(f"已處理 {frame_count} 幀")
         
@@ -161,16 +173,18 @@ class StandardSquatAnalyzer:
         if not sequence:
             raise Exception("影片中未檢測到有效的人體姿勢")
         
-        # 儲存標準序列
+        # ----- 儲存標準序列 -----
         self.standard_sequence = sequence
         print(f"標準動作分析完成，共 {len(sequence)} 幀")
-        
         # 儲存到文件（可選）
         self.save_standard_sequence("standard_squat_sequence.json")
         
         return sequence
     
     # ===== 儲存標準動作序列到文件 =====
+    # 1. 以JSON格式寫入檔案
+    # 2. 例外處理
+    # ================================   
     def save_standard_sequence(self, filename): 
         try:
             # 以JSON格式寫入檔案
@@ -181,25 +195,29 @@ class StandardSquatAnalyzer:
         except Exception as e: 
             print(f"儲存標準序列時發生錯誤: {e}")
     
-    # ===== 從文件載入標準動作序列 ===== 
+    # ===== 從文件載入標準動作序列 =====
+    # 1. 載入標準序列
+    # 2. 例外處理
+    # ================================  
     def load_standard_sequence(self, filename):
         
         try:
+            # 載入標準序列: 正確動作的角度變化流程
             with open(filename, 'r', encoding='utf-8') as f:
                 self.standard_sequence = json.load(f)
             print(f"標準動作序列已從 {filename} 載入，共 {len(self.standard_sequence)} 幀")
             return True
+            # 例外處理
         except Exception as e:
             print(f"載入標準序列時發生錯誤: {e}")
             return False
     
     # ===== 清理資源 =====
     def cleanup(self):
-        self.pose.close()
+        self.pose.close() # 關閉 MediaPipe 的姿勢偵測器
 
 # ===== 結合標準動作的深蹲檢測器(類別) =====
 class SquatDetectorWithStandard:
-    """結合標準動作的深蹲檢測器"""
     
     def __init__(self, standard_sequence, squat_threshold=120, similarity_threshold=0.8):
         """
@@ -381,7 +399,7 @@ class SquatDetectorWithStandard:
     # has_pose => 是否檢測到姿勢
     # --------------------------
     def draw_status_info(self, frame, is_squat, left_angle, right_angle, similarity, feedback, has_pose):
-        """繪製狀態資訊"""
+        
         h, w, _ = frame.shape # 影像高度、影像寬度、色彩通道數(不會用到)
         
         if has_pose:
@@ -612,7 +630,8 @@ def camera_detection_mode(standard_sequence):
 # ===== 分析標準深蹲影片模式 =====
 # 1. 輸入影片
 # 2. 檢查影片是否存在
-# 3.  
+# 3. 分析標準影片
+# ============================== 
 def analyze_standard_video_mode():
     
     print("\n=== 分析標準深蹲影片模式 ===")
@@ -633,12 +652,12 @@ def analyze_standard_video_mode():
     try:
         # ----- 分析標準影片 -----
         analyzer = StandardSquatAnalyzer() # 引入「標準深蹲動作分析器(類別)」
-        standard_sequence = analyzer.analyze_standard_video(video_path) # 呼叫「」
-        analyzer.cleanup()
+        standard_sequence = analyzer.analyze_standard_video(video_path) # 呼叫「提取關鍵角度；返回包含關鍵角度的字典函式」
+        analyzer.cleanup() # 呼叫「清理資源函式」
         
         print("標準影片分析完成！")
-        return standard_sequence
-        
+        return standard_sequence # 回傳「標準動作序列」
+    # 例外處理 
     except Exception as e:
         print(f"分析標準影片時發生錯誤: {e}")
         return None
@@ -809,27 +828,37 @@ def test_video_analysis_mode(standard_sequence):
         detector.cleanup() # 關閉 MediaPipe 的姿勢偵測器，釋放相關資源
         cv2.destroyAllWindows() # 關閉所有由 OpenCV 開啟的視窗，清理顯示資源
 
-
+# ===== 載入現有標準動作資料模式 =====
+# 1. 輸入標準動作資料檔案路徑
+# 2. 檢查檔案是否存在
+# 3. 檢查標準序列檔案是否正常讀取
+# ================================== 
 def load_standard_sequence_mode():
-    """載入現有標準動作資料模式"""
+
     print("\n=== 載入標準動作資料模式 ===")
     
+    # ----- 輸入標準動作資料檔案路徑 -----
+    # 預設 standard_squat_sequence.json
+    # ---------------------------------- 
     filename = input("請輸入標準動作資料檔案路徑 (預設: standard_squat_sequence.json): ").strip()
-    if not filename:
+    if not filename: # 如果使用者沒有輸入，則使用預設路徑
         filename = "standard_squat_sequence.json"
     
+    # ----- 檢查檔案是否存在 -----
     if not os.path.exists(filename):
         print(f"檔案不存在: {filename}")
         return None
     
     try:
-        analyzer = StandardSquatAnalyzer()
-        if analyzer.load_standard_sequence(filename):
-            standard_sequence = analyzer.standard_sequence
-            analyzer.cleanup()
-            return standard_sequence
+        analyzer = StandardSquatAnalyzer() # 引入「標準深蹲動作分析器(類別)」
+        # ----- 檢查標準序列檔案是否正常讀取 -----
+        if analyzer.load_standard_sequence(filename): # 呼叫「從文件載入標準動作序列函式」
+            standard_sequence = analyzer.standard_sequence # 取得標準動作序列資料
+            analyzer.cleanup() # 呼叫「清理資源」
+            return standard_sequence # 回傳「標準動作序列」
         else:
-            return None
+            return None # 如果載入失敗，則回傳 None，表示沒有取得標準動作資料
+    # 例外處理
     except Exception as e:
         print(f"載入標準序列時發生錯誤: {e}")
         return None
@@ -857,12 +886,12 @@ def main():
                 
                 camera_detection_mode(standard_sequence) # 呼叫「攝像頭即時檢測模式函式」
 
-            # 2.    
+            # 2. 分析標準深蹲影片   
             elif choice == '2':
-                # 分析標準深蹲影片
-                result = analyze_standard_video_mode()
+                result = analyze_standard_video_mode() # 呼叫「分析標準深蹲影片模式函式」
+                # 檢查分析標準影片或載入標準資料是否成功
                 if result:
-                    standard_sequence = result
+                    standard_sequence = result # 如果成功，將分析或載入得到的標準動作序列資料儲存
                     print("標準動作資料已更新，現在可以使用其他功能了！")
                 
             # 3. 輸入影片進行分析
@@ -870,24 +899,27 @@ def main():
                 # 測試影片分析
                 test_video_analysis_mode(standard_sequence) # 呼叫「測試影片分析模式函式」
                 
+            # 4. 載入現有的標準動作資料
             elif choice == '4':
-                # 載入現有的標準動作資料
-                result = load_standard_sequence_mode()
+                result = load_standard_sequence_mode() # 呼叫「載入現有標準動作資料模式函式」
+                # 檢查分析標準影片或載入標準資料是否成功
                 if result:
-                    standard_sequence = result
+                    standard_sequence = result # 如果成功，將分析或載入得到的標準動作序列資料儲存
                     print("標準動作資料載入成功，現在可以使用其他功能了！")
-                
+            
+            # 5. 退出程式
             elif choice == '5':
-                # 退出程式
                 print("感謝使用深蹲姿勢檢測程式！")
-                break
-                
+                break # 跳出無限迴圈
+            
+            # 例外輸入處理  
             else:
                 print("無效選擇，請輸入 1-5 的數字")
-                
+        # 例外: 使用者在終端機按下 Ctrl+C（或其他中斷鍵），主動中斷程式執行        
         except KeyboardInterrupt:
             print("\n\n程式被使用者中斷")
             break
+        # 程式執行過程中發生任何未預期的錯誤
         except Exception as e:
             print(f"\n程式執行時發生錯誤: {e}")
             print("請重新選擇功能或聯絡開發者")
