@@ -8,18 +8,32 @@ from scipy.spatial.distance import euclidean
 from dtw import dtw  # 需要安裝: pip install dtw-python
 
 # ===== 標準深蹲動作分析器(類別) =====
+# 初始化標準動作分析器(__init__)
+# 提取關鍵角度；返回包含關鍵角度的字典(extract_key_angles)
+# 計算角度的函數(calculate_angle)
+# 計算兩點連線與垂直線的夾角(calculate_vertical_angle)
+# 計算膝蓋內扣程度(calculate_knee_valgus) 
+# 分析標準深蹲影片，提取動作序列(analyze_standard_video)
+# 儲存標準動作序列到文件(save_standard_sequence)
+# 從文件載入標準動作序列(load_standard_sequence)
+# 清理資源(cleanup)
+# ===================================   
 class StandardSquatAnalyzer:
     
+    # ===== 初始化標準動作分析器 =====
+    # 初始化 MediaPipe
+    # 設定姿勢檢測: 最小檢測信心度 & 最小追蹤信心度
+    # 初始化標準動作序列
+    # ===============================  
     def __init__(self):
-        """初始化標準動作分析器"""
-        # ===== 初始化 MediaPipe =====
+        # ----- 初始化 MediaPipe -----
         # mp_pose => 姿勢偵測模組
         # mp_drawing => 繪圖工具模組
-        # ============================ 
+        # ---------------------------- 
         self.mp_pose = mp.solutions.pose
         self.mp_drawing = mp.solutions.drawing_utils
         
-        # ===== 設定姿勢檢測 =====
+        # ----- 設定姿勢檢測 -----
         self.pose = self.mp_pose.Pose(
             min_detection_confidence=0.7,  # 最小檢測信心度
             min_tracking_confidence=0.7    # 最小追蹤信心度
@@ -100,25 +114,37 @@ class StandardSquatAnalyzer:
             
         return angle
     
+    # ===== 計算兩點連線與垂直線的夾角 =====
+    # 計算兩點的連線與垂直線的夾角 
+    # EX: 用來判斷身體前傾角度，分析深蹲時身體是否過度前傾
+    # ==================================== 
     def calculate_vertical_angle(self, point1, point2):
-        """計算兩點連線與垂直線的夾角"""
-        dx = point2[0] - point1[0]
-        dy = point2[1] - point1[1]
+        dx = point2[0] - point1[0] # x 座標
+        dy = point2[1] - point1[1] # y 座標
+        # ----- 計算身體前傾程度 -----
+        # np.arctan2(dx, dy)：計算連線與垂直方向（y軸）的夾角（單位：弧度）。
+        # * 180.0 / np.pi：將弧度轉換為角度（度數）。
+        # np.abs(...)：取絕對值，確保角度為正。
+        # --------------------------- 
         angle = np.abs(np.arctan2(dx, dy) * 180.0 / np.pi)
-        return angle
+
+        return angle # 回傳「兩點連線與垂直線的夾角度數」
     
+    # ===== 計算膝蓋內扣程度 =====
+    # 膝蓋距離/臀部距離，比例越小代表膝蓋越內扣
+    # ==========================  
     def calculate_knee_valgus(self, left_hip, left_knee, right_hip, right_knee):
-        """計算膝蓋內扣程度"""
         # 計算膝蓋間距與臀部間距的比例
-        knee_distance = abs(right_knee[0] - left_knee[0])
-        hip_distance = abs(right_hip[0] - left_hip[0])
+        knee_distance = abs(right_knee[0] - left_knee[0])   # 左右膝蓋的 x 座標距離
+        hip_distance = abs(right_hip[0] - left_hip[0])      # 左右臀部的 x 座標距離
         
+        # 檢查左右臀部的 x 座標距離是否大於 0，確保不會除以零
         if hip_distance > 0:
-            valgus_ratio = knee_distance / hip_distance
+            valgus_ratio = knee_distance / hip_distance # 膝蓋距離/臀部距離，比例越小代表膝蓋越內扣
         else:
-            valgus_ratio = 1.0
+            valgus_ratio = 1.0 # 避免除以零，預設為 1.0
             
-        return valgus_ratio
+        return valgus_ratio # 回傳「膝蓋內扣比例」
     
     # ===== 分析標準深蹲影片，提取動作序列 =====
     # 1. 檢查影片是否能正確讀取
@@ -126,7 +152,8 @@ class StandardSquatAnalyzer:
     # 3. 轉換顏色格式
     # 4. 進行姿勢檢測
     # 5. 檢查是否偵測到人體
-    # 6. 儲存標準序列 
+    # 6. 儲存標準序列
+    # ======================================= 
     def analyze_standard_video(self, video_path):
 
         print(f"正在分析標準影片: {video_path}")
@@ -219,48 +246,52 @@ class StandardSquatAnalyzer:
 # ===== 結合標準動作的深蹲檢測器(類別) =====
 class SquatDetectorWithStandard:
     
+    # ===== 初始化檢測器 =====
+    # 1. 設定基礎參數
+    # 2. 設定計數器
+    # 3. 設定當前動作序列記錄
+    # 4. 初始化 MediaPipe
+    # 5. 設定姿勢檢測
+    # 6. 初始化標準動作分析器
+    # ======================= 
     def __init__(self, standard_sequence, squat_threshold=120, similarity_threshold=0.8):
-        """
-        初始化檢測器
         
-        Args:
-            standard_sequence: 標準動作序列
-            squat_threshold: 深蹲判斷的膝蓋角度閾值
-            similarity_threshold: 與標準動作的相似度閾值
-        """
-        self.standard_sequence = standard_sequence
-        self.squat_threshold = squat_threshold
-        self.similarity_threshold = similarity_threshold
+        # ----- 設定基礎參數 -----
+        self.standard_sequence = standard_sequence          # 標準動作序列
+        self.squat_threshold = squat_threshold              # 深蹲判斷的膝蓋角度閾值
+        self.similarity_threshold = similarity_threshold    # 與標準動作的相似度閾值
         
-        # 計數器
-        self.squat_count = 0
-        self.correct_squat_count = 0
-        self.in_squat = False
+        # ----- 設定計數器 -----
+        self.squat_count = 0            # 偵測到的深蹲動作總數，從 0 開始
+        self.correct_squat_count = 0    # 動作標準（相似度達標）的深蹲次數，從 0 開始
+        self.in_squat = False           # 是否處於深蹲姿勢，預設為「否」
         
-        # 當前動作序列記錄
+        # ----- 設定當前動作序列記錄 -----
         self.current_sequence = []
         self.max_sequence_length = 60  # 最大記錄幀數
         
-        # ===== 初始化 MediaPipe =====
+        # ----- 初始化 MediaPipe -----
         # mp_pose => 姿勢偵測模組
         # mp_drawing => 繪圖工具模組
-        # ============================
+        # ----------------------------
         self.mp_pose = mp.solutions.pose
         self.mp_drawing = mp.solutions.drawing_utils
         
-        # ===== 設定姿勢檢測 =====
+        # ----- 設定姿勢檢測 -----
         self.pose = self.mp_pose.Pose(
             min_detection_confidence=0.5,  # 最小檢測信心度
             min_tracking_confidence=0.5    # 最小追蹤信心度
         )
         
-        # 初始化標準動作分析器（用於角度計算）
-        self.analyzer = StandardSquatAnalyzer()
+        # ----- 初始化標準動作分析器 -----
+        # 用於角度計算
+        # ------------------------------  
+        self.analyzer = StandardSquatAnalyzer() # 引入「標準深蹲動作分析器(類別)」
     
+    # ===== 比較當前姿勢與標準動作的相似度 =====
+    # 1.  
     def compare_with_standard(self, current_angles):
-        """
-        比較當前姿勢與標準動作的相似度
-        """
+        
         if not self.standard_sequence or not current_angles:
             return 0.0, "無標準資料"
         
