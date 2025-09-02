@@ -289,49 +289,80 @@ class SquatDetectorWithStandard:
         self.analyzer = StandardSquatAnalyzer() # 引入「標準深蹲動作分析器(類別)」
     
     # ===== 比較當前姿勢與標準動作的相似度 =====
-    # 1.  
+    # 1. 檢查「標準動作序列&目前角度資料」是否有資料
+    # 2. 記錄當前動作序列
+    # 3. 限制序列長度
+    # 4. 檢查序列是否太短
+    # 5. 提取關鍵角度序列進行比較
+    # 6. 讀取當前序列的角度
+    # 7. 檢查「標準角度序列&目前角度序列」是否有資料
+    # 8.  
     def compare_with_standard(self, current_angles):
         
+        # ----- 檢查「標準動作序列&目前角度資料」是否有資料 -----
         if not self.standard_sequence or not current_angles:
-            return 0.0, "無標準資料"
+            return 0.0, # 回傳「相似度 0.0」，代表無資料
         
-        # 記錄當前動作序列
+        # ----- 記錄當前動作序列 -----
+        # 用來記錄最近一段時間（多幀）的動作角度序列
+        # ---------------------------  
         self.current_sequence.append(current_angles)
         
-        # 限制序列長度
+        # ----- 限制序列長度 -----
+        # 如果超過最大長度，就移除最前面（最舊）的一幀資料，確保只保留最近一段時間的動作序列
+        # 讓比對只針對「最近的動作」，避免序列過長造成記憶體浪費或比對不準確
+        # ----------------------- 
         if len(self.current_sequence) > self.max_sequence_length:
             self.current_sequence.pop(0)
         
-        # 如果序列太短，無法比較
+        # ----- 檢查序列是否太短 -----
+        # 剛開始偵測時，self.current_sequence 只累積了幾幀（少於 10 幀），還沒記錄到足夠的動作過程。
+        # 使用者動作太快或剛進入深蹲狀態，還沒累積到 10 幀資料
+        # -------------------------------- 
         if len(self.current_sequence) < 10:
-            return 0.5, "動作序列太短"
+            return 0.5, # 0.5 是暫時性、保留的相似度，避免誤判為完全錯誤
         
         # 使用 DTW 比較角度序列
         try:
-            # 提取關鍵角度序列進行比較
+            # ----- 提取關鍵角度序列進行比較 -----
             key_angles = ['left_knee_angle', 'right_knee_angle', 'left_hip_angle', 'right_hip_angle']
             
-            similarities = []
+            similarities = [] # 儲存「每種關鍵角度」與標準動作比對後的相似度分數
+
             for angle_type in key_angles:
-                # 當前序列的角度
+                # ----- 讀取當前序列的角度 -----
+                # 將最近一段時間的某種角度（如左膝蓋角度）提取出來，形成一個序列
+                # ------------------------- 
                 current_angle_seq = [frame.get(angle_type, 0) for frame in self.current_sequence]
                 
-                # 標準序列的角度（取平均長度的片段）
-                if len(self.standard_sequence) > len(current_angle_seq):
-                    # 從標準序列中選取相應長度的片段
-                    start_idx = len(self.standard_sequence) // 4  # 從1/4處開始
-                    end_idx = start_idx + len(current_angle_seq)
+                # ----- 標準序列的角度（取平均長度的片段） -----
+                # DTW（動態時間校正）概念說明(與實際有差別): 
+                # 把標準影片的撥放速度加速或放慢到接近使用者做動作的速度再去比較相似度
+                # 而 DTW 的實際做法，會把你做的每個動作（每一幀的角度）和標準影片裡最接近的動作配對
+                # ------------------------------------------- 
+                if len(self.standard_sequence) > len(current_angle_seq): # 如果標準動作序列 > 目前動作序列
+                    # 從標準序列中選取相同長度的片段
+                    start_idx = len(self.standard_sequence) // 4  # 片段起始位置: 設在標準序列的 1/4 處
+                    end_idx = start_idx + len(current_angle_seq)  # 片段結束位置: 確保片段長度和目前動作序列一致
+                    # 標準序列的片段中，提取指定角度（如左膝蓋角度）形成一個序列
                     standard_angle_seq = [frame.get(angle_type, 0) 
                                         for frame in self.standard_sequence[start_idx:end_idx]]
-                else:
+                
+                else: # 如果標準動作序列 > 目前動作序列，則直接用全部標準序列的角度資料
                     standard_angle_seq = [frame.get(angle_type, 0) for frame in self.standard_sequence]
                 
+                # ----- 檢查「標準角度序列&目前角度序列」是否有資料 -----
                 if standard_angle_seq and current_angle_seq:
-                    # 計算 DTW 距離
+                    # --- 計算 DTW 距離 ---
+                    # 比對使用者的動作和標準動作的角度變化，計算兩個序列的「距離」。（距離越小，代表越相似）
+                    # --------------------
                     alignment = dtw(np.array(current_angle_seq), np.array(standard_angle_seq))
                     normalized_distance = alignment.distance / max(len(current_angle_seq), len(standard_angle_seq))
                     
-                    # 轉換為相似度 (0-1)
+                    # --- 轉換為相似度 (0-1) ---
+                    # 把距離轉換成「相似度分數」（0~1），距離越小，相似度越高
+                    # 如果距離很大，相似度最低為 0
+                    # ------------------------- 
                     similarity = max(0, 1 - normalized_distance / 100)  # 調整歸一化係數
                     similarities.append(similarity)
             
