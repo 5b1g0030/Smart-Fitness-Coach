@@ -8,3 +8,14 @@
 
 == 執行前安裝 ==
 python -m pip install opencv-python mediapipe numpy dtw-python
+
+python -m pip install pillow -> 需要在視窗上顯示中文時
+
+== 動作影片引用路徑 ==
+D:\Users\Gina\Desktop\python project\video\
+
+影片名稱:
+D:\Users\Gina\Desktop\python project\video\processed video\standard_squat.mp4
+D:\Users\Gina\Desktop\python project\video\processed video\standard_squat2.mp4
+D:\Users\Gina\Desktop\python project\video\processed video\standard_squat3.mp4
+D:\Users\Gina\Desktop\python project\video\processed video\standard_squat4.mp4

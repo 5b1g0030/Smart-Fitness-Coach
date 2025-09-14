@@ -6,6 +6,7 @@ import json             # 用於儲存和讀取標準動作資料
 import os               # 用於檔案和路徑操作
 from scipy.spatial.distance import euclidean
 from dtw import dtw  # 需要安裝: pip install dtw-python
+from PIL import Image, ImageDraw, ImageFont
 
 # ===== 標準深蹲動作分析器(類別) =====
 # 初始化標準動作分析器(__init__)
@@ -301,7 +302,7 @@ class SquatDetectorWithStandard:
         
         # ----- 檢查「標準動作序列&目前角度資料」是否有資料 -----
         if not self.standard_sequence or not current_angles:
-            return 0.0, # 回傳「相似度 0.0」，代表無資料
+            return 0.0, "無標準資料" # 回傳「相似度 0.0」，代表無資料
         
         # ----- 記錄當前動作序列 -----
         # 用來記錄最近一段時間（多幀）的動作角度序列
@@ -320,7 +321,7 @@ class SquatDetectorWithStandard:
         # 使用者動作太快或剛進入深蹲狀態，還沒累積到 10 幀資料
         # -------------------------------- 
         if len(self.current_sequence) < 10:
-            return 0.5, # 0.5 是暫時性、保留的相似度，避免誤判為完全錯誤
+            return 0.5, "動作序列太短" # 0.5 是暫時性、保留的相似度，避免誤判為完全錯誤
         
         # 使用 DTW 比較角度序列
         try:
@@ -376,27 +377,42 @@ class SquatDetectorWithStandard:
             print(f"DTW 比較時發生錯誤: {e}")
             return 0.0, f"比較錯誤: {str(e)}"
     
+    # ===== 根據角度和相似度生成回饋 =====
+    # 1. 檢查下蹲深度
+    # 2. 檢查膝蓋內扣
+    # 3. 檢查身體前傾
+    # 4. 根據相似度給出總體評價
+    # 5. 顯示動作評價
+    # ================================== 
     def get_feedback(self, angles, similarity):
-        """根據角度和相似度生成回饋"""
-        feedback_parts = []
         
-        # 檢查深度
-        left_knee = angles.get('left_knee_angle', 180)
+        feedback_parts = [] # 動作評價
+        
+        # ----- 檢查下蹲深度 -----
+        # 左右膝蓋角度 > 100 度
+        # ----------------------- 
+        left_knee = angles.get('left_knee_angle', 180) # 預設角度 180 度，代表「完全伸直」的膝蓋
         right_knee = angles.get('right_knee_angle', 180)
         if left_knee > 100 or right_knee > 100:
             feedback_parts.append("深度不足")
         
-        # 檢查膝蓋內扣
+        # ----- 檢查膝蓋內扣 -----
+        # 膝蓋距離和臀部距離的比例小於 0.8
+        # ----------------------- 
         knee_valgus = angles.get('knee_valgus', 1.0)
         if knee_valgus < 0.8:  # 膝蓋過於內扣
             feedback_parts.append("膝蓋內扣")
         
-        # 檢查身體前傾
+        # ----- 檢查身體前傾 -----
+        # 深蹲時身體前傾角度超過 20 度
+        # ----------------------- 
         body_lean = angles.get('body_lean', 0)
         if body_lean > 20:  # 過度前傾
             feedback_parts.append("身體過於前傾")
         
-        # 根據相似度給出總體評價
+        # ----- 根據相似度給出總體評價 -----
+        # 最近一段深蹲動作的關鍵角度變化，和標準深蹲動作的關鍵角度變化之間的相似程度
+        # -------------------------------- 
         if similarity > 0.8:
             overall = "動作標準"
         elif similarity > 0.6:
@@ -406,21 +422,24 @@ class SquatDetectorWithStandard:
         else:
             overall = "動作不正確"
         
+        # ----- 顯示動作評價 -----
         if feedback_parts:
             return f"{overall}: {', '.join(feedback_parts)}"
         else:
             return overall
     
+    # ===== 判斷是否為深蹲姿勢並分析品質 =====
+    # 1. 提取角度 
     def is_squat_pose(self, landmarks, frame_width, frame_height):
-        """判斷是否為深蹲姿勢並分析品質"""
-        # 提取角度
+        
+        # 提取角度(左右膝蓋、左右髖關節、肩膀到臀部、膝蓋距離/臀部距離)
         angles = self.analyzer.extract_key_angles(landmarks, frame_width, frame_height)
         if not angles:
             return False, 0, 0, 0.0, "無法分析"
         
         # 基本深蹲判斷
-        left_knee_angle = angles['left_knee_angle']
-        right_knee_angle = angles['right_knee_angle']
+        left_knee_angle = angles['left_knee_angle'] # 左膝蓋
+        right_knee_angle = angles['right_knee_angle'] # 右膝蓋
         
         is_squat = (left_knee_angle < self.squat_threshold and 
                    right_knee_angle < self.squat_threshold)
@@ -436,7 +455,7 @@ class SquatDetectorWithStandard:
     # 避免重複計數的邏輯
     # ========================
     def update_squat_count(self, is_squat, similarity):
-        """更新深蹲計數"""
+        
         if is_squat and not self.in_squat:
             # 從非深蹲狀態進入深蹲狀態，計數+1
             self.squat_count += 1
@@ -452,47 +471,86 @@ class SquatDetectorWithStandard:
             # 清空當前序列，準備記錄下一次動作
             self.current_sequence = []
     
-    # ----- 繪製狀態資訊 -----
+    # ===== 繪製中文字 =====
+    def draw_chineese_text(self, frame, x_y, text, font_size=32, color=(255,255,255)):
+        # ----- 參數說明 -----
+        # 在 frame 上指定位置繪製中文字。
+        # frame: OpenCV 影像 (numpy array)
+        # x_y: (x, y) 座標
+        # text: 要顯示的文字（可含中文）
+        # font_size: 字體大小
+        # color: 文字顏色 (B, G, R)
+        # -------------------- 
+        
+        # 1. 轉成 PIL 影像
+        img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        draw = ImageDraw.Draw(img_pil)
+
+        # 2. 指定中文字型（Windows 可用微軟正黑體 msjh.ttc）
+        font_path = "msjh.ttc"  # 請確認這個字型檔案在你的系統上存在
+        font = ImageFont.truetype(font_path, font_size)
+
+        # 3. 畫字
+        draw.text(x_y, text, font=font, fill=(color[2], color[1], color[0]))  # PIL 用 RGB
+        
+        # 4. 轉回 OpenCV 格式
+        frame[:,:,:] = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+
+    # ===== 繪製狀態資訊 =====
     # frame => 原始影像
     # is_squat => 是否為深蹲姿勢
     # left_angle, right_angle => 左右膝蓋角度
     # similarity => 與標準動作的相似度
     # feedback => 動作回饋訊息
     # has_pose => 是否檢測到姿勢
-    # --------------------------
+    # ========================
     def draw_status_info(self, frame, is_squat, left_angle, right_angle, similarity, feedback, has_pose):
         
         h, w, _ = frame.shape # 影像高度、影像寬度、色彩通道數(不會用到)
         
+
+        # ----- (補充)cv2.putText參數說明: 
         if has_pose:
             # 顯示姿勢狀態
             if is_squat:
                 # 在畫面左上角顯示「深蹲」
-                cv2.putText(frame, "squats", (10, 50), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 3)
+                # cv2.putText(frame, "Squats", (10, 50), 
+                #            cv2.FONT_HERSHEY_SIMPLEX, 2.5, (0, 255, 0), 3)
+                self.draw_chineese_text(frame, (10, 0), "深蹲"
+                                        , font_size=100, color=(0, 255, 0))
             else:
                 # 在畫面左上角顯示「站立」
-                cv2.putText(frame, "Standing", (10, 50), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 0), 3)
+                # cv2.putText(frame, "Standing", (10, 50), 
+                #            cv2.FONT_HERSHEY_SIMPLEX, 2.5, (255, 0, 0), 3)
+                self.draw_chineese_text(frame, (10, 0), "站立"
+                                        , font_size=100, color=(255, 0, 0))
             
             # 顯示深蹲計數
-            cv2.putText(frame, f"Count: {self.squat_count}", (10, 100), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
-            cv2.putText(frame, f"Correct: {self.correct_squat_count}", (10, 140), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            # cv2.putText(frame, f"Count: {self.squat_count}", (10, 100), 
+            #            cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+            self.draw_chineese_text(frame, (10, 120), f"總次數: {self.squat_count}"
+                                    , font_size=40, color=(255, 255, 0))
+            # cv2.putText(frame, f"Correct: {self.correct_squat_count}", (10, 140), 
+            #            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            self.draw_chineese_text(frame, (10, 160), f"總次數: {self.correct_squat_count}"
+                                    , font_size=40, color=(0, 255, 0))
             
             # 顯示相似度
             similarity_color = (0, 255, 0) if similarity > 0.8 else (0, 255, 255) if similarity > 0.6 else (0, 0, 255)
-            cv2.putText(frame, f"Similarity: {similarity:.2f}", (10, 180), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, similarity_color, 2)
+            # cv2.putText(frame, f"Similarity: {similarity:.2f}", (10, 180), 
+            #            cv2.FONT_HERSHEY_SIMPLEX, 0.8, similarity_color, 2)
+            self.draw_chineese_text(frame, (10, 200), f"準確率: {similarity:.2f}"
+                                    , font_size=40, color=similarity_color)
             
             # 顯示回饋
-            cv2.putText(frame, feedback, (10, 220), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            # cv2.putText(frame, feedback, (10, 220), 
+            #            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            self.draw_chineese_text(frame, (10, 300), f"{feedback}"
+                                    , font_size=40, color=(10, 10, 10))
             
             # 顯示角度資訊
-            cv2.putText(frame, f"L: {int(left_angle)}° R: {int(right_angle)}°", (10, 260), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            cv2.putText(frame, f"L: {int(left_angle)} deg  R: {int(right_angle)} deg", (10, 300), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, (10, 10, 10), 2)
         else:
             # 沒有檢測到姿勢
             cv2.putText(frame, "No Pose Detected", (10, 50), 
@@ -511,7 +569,7 @@ class SquatDetectorWithStandard:
     # 6. 繪製資訊
     # ========================
     def process_frame(self, frame, mirror=True):
-        """處理單一影格"""
+        
         # ----- 畫面左右顛倒 -----
         # 鏡像效果，符合使用者視角（僅在攝像頭模式需要）
         # 參數補充:
@@ -559,18 +617,17 @@ class SquatDetectorWithStandard:
         # 繪製狀態資訊
         self.draw_status_info(frame, is_squat, left_angle, right_angle, similarity, feedback, has_pose)
         return frame
-    
+
+    # ===== 重設計數器 =====     
     def reset_counters(self):
-        """重設計數器"""
-        self.squat_count = 0
-        self.correct_squat_count = 0
-        self.in_squat = False
-        self.current_sequence = []
+        self.squat_count = 0            # 總深蹲次數
+        self.correct_squat_count = 0    # 正確深蹲次數
+        self.in_squat = False           # 深蹲狀態
+        self.current_sequence = []      # 動作角度序列
         print("計數已重設")
     
     # ===== 清理資源 =====
     def cleanup(self):
-        """清理資源"""
         self.pose.close() # 關閉 MediaPipe 的姿勢偵測器，釋放相關資源
         self.analyzer.cleanup()
 
