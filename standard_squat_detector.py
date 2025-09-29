@@ -676,9 +676,9 @@ def camera_detection_mode(standard_sequence):
     
     # ----- 初始化檢測器 -----
     detector = SquatDetectorWithStandard(
-        standard_sequence=standard_sequence,
-        squat_threshold=120,
-        similarity_threshold=0.6
+        standard_sequence=standard_sequence,    # 傳入「基本動作序列資料」
+        squat_threshold=120,                    # 深蹲判斷膝蓋角度閾值
+        similarity_threshold=0.6                # 動作相似度門檻
     )
     
     # ----- 顯示操作提示 -----
@@ -711,10 +711,12 @@ def camera_detection_mode(standard_sequence):
             # ----- 檢查有無讀取到畫面 -----
             if not ret:
                 print("無法讀取攝像頭")
-                break # 跳出迴圈(不繼續以下流程)
+                break # 停止迴圈
             
             # ----- 處理影格 -----
             # 攝像頭模式需要鏡像
+            # frame => 影像畫面資料
+            # mirror => 畫面反轉(果不翻轉，當你舉起右手時，畫面上會顯示左手舉起，這樣很不直觀) 
             # ------------------- 
             processed_frame = detector.process_frame(frame, mirror=True)
             
@@ -724,7 +726,10 @@ def camera_detection_mode(standard_sequence):
             cv2.imshow('Camera Squat Detection', processed_frame)
             
             # ------ 處理按鍵事件 -----
-            key = cv2.waitKey(1) & 0xFF
+            # cv2.waitKey(1) => 暫停1毫秒，讓使用者輸入按鍵
+            # & 0xFF => 某些系統能回傳 32 位元的值，用 0xFF 確保只取 8 位元(ASCII)
+            # ------------------------ 
+            key = cv2.waitKey(1) & 0xFF 
             if key == ord('q'):
                 # 按 'q' 鍵退出 
                 print("使用者按下 'q' 鍵，退出攝像頭模式")
@@ -748,7 +753,8 @@ def camera_detection_mode(standard_sequence):
 
 # ===== 分析標準深蹲影片模式 =====
 # 1. 輸入影片
-# 2. 檢查影片是否存在
+# 2. 檢查是否有路徑 -> none
+# 2. 檢查影片是否存在 -> none
 # 3. 分析標準影片
 # ============================== 
 def analyze_standard_video_mode():
@@ -759,14 +765,16 @@ def analyze_standard_video_mode():
     # strip() => 去除使用者輸入內容前後的空白或換行，確保取得乾淨的路徑字串
     # ------------------- 
     video_path = input("請輸入標準深蹲影片路徑: ").strip()
+
+    # ----- 檢查是否有路徑 -----
     if not video_path:
-        print("未提供影片路徑，返回主選單")
-        return None
+        print("未提供影片路徑，返回主選單...")
+        return None # 停止函式
     
     # ----- 檢查影片是否存在 -----
-    if not os.path.exists(video_path):
+    if not os.path.exists(video_path): # 根據路徑去驗證檔案或資料是否存在
         print(f"影片文件不存在: {video_path}")
-        return None
+        return None # 停止函式
     
     try:
         # ----- 分析標準影片 -----
@@ -1001,7 +1009,7 @@ def main():
                 if not standard_sequence:
                     print("\n錯誤：沒有標準動作資料！")
                     print("請先選擇功能 2 分析標準影片，或選擇功能 4 載入現有資料")
-                    continue
+                    continue # 跳出 if 避免誤執行後續函式導致錯誤
                 
                 camera_detection_mode(standard_sequence) # 呼叫「攝像頭即時檢測模式函式」
 
