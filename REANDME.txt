@@ -19,3 +19,4 @@ D:\Users\Gina\Desktop\python project\video\processed video\standard_squat.mp4
 D:\Users\Gina\Desktop\python project\video\processed video\standard_squat2.mp4
 D:\Users\Gina\Desktop\python project\video\processed video\standard_squat3.mp4
 D:\Users\Gina\Desktop\python project\video\processed video\standard_squat4.mp4
+D:\Users\Gina\Desktop\python project\video\processed video\squat.mp4
