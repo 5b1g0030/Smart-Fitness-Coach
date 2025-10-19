@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能健身教練 - 深蹲檢測</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- 左側控制面板 -->
+        <div class="left-panel">
+            <h1>智能健身教練</h1>
+            
+            <!-- 動作選擇按鈕 -->
+            <div class="action-buttons">
+                <h2>選擇動作</h2>
+                <button id="squatBtn" class="action-btn squat-btn">
+                    <span class="btn-icon">🏋️</span>
+                    深蹲檢測
+                </button>
+            </div>
+            
+            <!-- 統計資訊 -->
+            <div class="stats-panel">
+                <h3>運動統計</h3>
+                <div class="stat-item">
+                    <span class="stat-label">總次數:</span>
+                    <span id="totalCount" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">正確次數:</span>
+                    <span id="correctCount" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">準確率:</span>
+                    <span id="accuracy" class="stat-value">0%</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 右側影像顯示區 -->
+        <div class="right-panel">
+            <div class="video-container">
+                <div id="videoPlaceholder" class="video-placeholder">
+                    <div class="placeholder-content">
+                        <span class="placeholder-icon">📹</span>
+                        <p>請選擇動作開始檢測</p>
+                    </div>
+                </div>
+                <img id="videoFeed" class="video-feed" style="display: none;" src="">
+                
+                <!-- 播放控制按鈕 -->
+                <div id="playbackControls" class="playback-controls" style="display: none;">
+                    <button id="playBtn" class="control-btn play-btn">▶️ 播放</button>
+                    <button id="pauseBtn" class="control-btn pause-btn">⏸️ 暫停</button>
+                    <button id="stopBtn" class="control-btn stop-btn">⏹️ 關閉</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 模態視窗 -->
+    <div id="modeModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>選擇檢測模式</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <button id="cameraMode" class="mode-btn">
+                    <span class="mode-icon">📷</span>
+                    <div class="mode-text">
+                        <h3>即時鏡頭影像</h3>
+                        <p>使用攝像頭進行即時檢測</p>
+                    </div>
+                </button>
+                
+                <button id="videoMode" class="mode-btn">
+                    <span class="mode-icon">🎬</span>
+                    <div class="mode-text">
+                        <h3>影片輸入</h3>
+                        <p>上傳影片檔案進行分析</p>
+                    </div>
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 影片上傳視窗 -->
+    <div id="videoUploadModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>選擇影片檔案</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="upload-area">
+                    <input type="file" id="videoFile" accept="video/*" style="display: none;">
+                    <div class="upload-placeholder" onclick="document.getElementById('videoFile').click();">
+                        <span class="upload-icon">📁</span>
+                        <p>點擊選擇影片檔案</p>
+                        <p class="upload-hint">支援 MP4, AVI, MOV 等格式</p>
+                    </div>
+                    <div id="fileName" class="file-name" style="display: none;"></div>
+                    <button id="uploadBtn" class="upload-btn" style="display: none;">開始分析</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

@@ -7,7 +7,7 @@
 ** 僅Windows適用 **
 
 == 執行前安裝 ==
-python -m pip install opencv-python mediapipe numpy dtw-python
+python -m pip install opencv-python mediapipe numpy dtw-python flask
 
 python -m pip install pillow -> 需要在視窗上顯示中文時
 
