@@ -21,12 +21,14 @@ from PIL import Image, ImageDraw, ImageFont
 # ===================================   
 class StandardSquatAnalyzer:
     
-    # ===== 初始化標準動作分析器 =====
-    # 初始化 MediaPipe
-    # 設定姿勢檢測: 最小檢測信心度 & 最小追蹤信心度
-    # 初始化標準動作序列
-    # ===============================  
+    # ===== 初始化標準動作分析器 =====  
     def __init__(self):
+        '''
+            初始化 MediaPipe
+            設定姿勢檢測: 最小檢測信心度 & 最小追蹤信心度
+            初始化標準動作序列
+        '''
+
         # ----- 初始化 MediaPipe -----
         # mp_pose => 姿勢偵測模組
         # mp_drawing => 繪圖工具模組
@@ -233,16 +235,17 @@ class StandardSquatAnalyzer:
             # 載入標準序列: 正確動作的角度變化流程
             with open(filename, 'r', encoding='utf-8') as f:
                 self.standard_sequence = json.load(f)
-            print(f"標準動作序列已從 {filename} 載入，共 {len(self.standard_sequence)} 幀")
+            print(f"標準動作序列已從 {filename} 載入，共 {len(self.standard_sequence)} 幀 by pose_detector")
             return True
             # 例外處理
         except Exception as e:
-            print(f"載入標準序列時發生錯誤: {e}")
+            print(f"載入標準序列時發生錯誤: {e} by pose_detector")
             return False
     
     # ===== 清理資源 =====
     def cleanup(self):
-        self.pose.close() # 關閉 MediaPipe 的姿勢偵測器
+        self.pose.close() # 關閉 MediaPipe 的姿勢偵測器，避免資源占用
+        print("關閉 MediaPipe 的姿勢偵測器，資源已釋放 by pose_detector")
 
 # ===== 結合標準動作的深蹲檢測器(類別) =====
 class SquatDetectorWithStandard:

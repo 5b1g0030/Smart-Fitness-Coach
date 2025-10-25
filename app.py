@@ -4,42 +4,48 @@ import json
 import os
 import threading
 import time
-from standard_squat_detector import StandardSquatAnalyzer, SquatDetectorWithStandard
+import secrets
+from pose_detector import StandardSquatAnalyzer, SquatDetectorWithStandard
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key_here'
+
+# 金鑰
+app.secret_key = secrets.token_hex(16)  # 生成32字元的隨機金鑰
 
 class FlaskSquatDetector:
     def __init__(self):
-        self.camera = None
-        self.video_capture = None
-        self.detector = None
-        self.standard_sequence = None
-        self.is_running = False
-        self.is_paused = False
-        self.current_frame = None
-        self.detection_mode = None  # 'camera' or 'video'
-        self.video_path = None
+        self.camera = None          # 鏡頭
+        self.video_capture = None   # 影片檔案
+        self.video_path = None      # 影片檔案路徑
+        self.detector = None        # 深蹲檢測
+        self.standard_sequence = None # 標準動作序列
+        self.is_running = False       # 檢查是否在執行
+        self.is_paused = False        # 檢查是否暫停
+        self.current_frame = None     # 目前處理的畫面
+        self.detection_mode = None  # 檢測模式：'camera' 或 'video'
         
         # 載入標準動作序列
         self.load_standard_sequence()
     
+    # ===== 載入標準動作序列 =====
     def load_standard_sequence(self):
-        """載入標準動作序列"""
+        
         try:
-            if os.path.exists("standard_squat_sequence.json"):
-                analyzer = StandardSquatAnalyzer()
-                if analyzer.load_standard_sequence("standard_squat_sequence.json"):
+            if os.path.exists("standard_squat_sequence.json"): # 檢查檔案是否存在
+                analyzer = StandardSquatAnalyzer() # 引入類別
+                # 呼叫載入序列的函式，如果成功載入則儲存該序列
+                if analyzer.load_standard_sequence("standard_squat_sequence.json"): 
                     self.standard_sequence = analyzer.standard_sequence
-                    print("標準動作序列載入成功")
-                analyzer.cleanup()
+                    print("標準動作序列載入成功 by app")
+                analyzer.cleanup() # 釋放資源
         except Exception as e:
-            print(f"載入標準序列失敗: {e}")
+            print(f"載入標準序列失敗: {e} by app")
     
+    # ===== 啟動攝像頭檢測 =====
     def start_camera(self):
         """啟動攝像頭檢測"""
         if self.standard_sequence is None:
-            return False, "沒有標準動作資料"
+            return False, "沒有標準動作資料 by app"
         
         try:
             self.camera = cv2.VideoCapture(0, cv2.CAP_DSHOW)
@@ -63,18 +69,21 @@ class FlaskSquatDetector:
         except Exception as e:
             return False, f"啟動攝像頭失敗: {str(e)}"
     
+    # ===== 啟動影片檢測 =====
     def start_video(self, video_path):
-        """啟動影片檢測"""
-        if self.standard_sequence is None:
-            return False, "沒有標準動作資料"
         
+        # ----- 檢查有無標準序列 -----
+        if self.standard_sequence is None:
+            return False, "沒有標準動作資料 by app"
+        
+        # ----- 檢查檔案是否存在 -----
         if not os.path.exists(video_path):
-            return False, "影片檔案不存在"
+            return False, "影片檔案不存在 by app"
         
         try:
             self.video_capture = cv2.VideoCapture(video_path)
             if not self.video_capture.isOpened():
-                return False, "無法開啟影片檔案"
+                return False, "無法開啟影片檔案 by app"
             
             self.detector = SquatDetectorWithStandard(
                 standard_sequence=self.standard_sequence,
