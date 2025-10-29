@@ -5,6 +5,7 @@ import os
 import threading
 import time
 import secrets
+from werkzeug.utils import secure_filename
 from pose_detector import StandardSquatAnalyzer, SquatDetectorWithStandard
 
 app = Flask(__name__)
@@ -172,6 +173,22 @@ class FlaskSquatDetector:
 # 全域檢測器實例
 flask_detector = FlaskSquatDetector()
 
+# 設定上傳檔案的目錄
+UPLOAD_FOLDER = 'uploads'
+ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'mkv', 'wmv'}
+
+# 確保上傳目錄存在
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 限制檔案大小為 100MB
+
+def allowed_file(filename):
+    """檢查檔案副檔名是否允許"""
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -233,5 +250,47 @@ def video_feed():
     
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
+@app.route('/upload_video', methods=['POST'])
+def upload_video():
+    """上傳影片檔案"""
+    try:
+        # 檢查是否有檔案
+        if 'video' not in request.files:
+            return jsonify({'success': False, 'message': '沒有檔案被上傳'})
+        
+        file = request.files['video']
+        
+        # 檢查檔案名稱
+        if file.filename == '':
+            return jsonify({'success': False, 'message': '沒有選擇檔案'})
+        
+        # 檢查檔案類型
+        if not allowed_file(file.filename):
+            return jsonify({'success': False, 'message': '不支援的檔案格式'})
+        
+        # 生成安全的檔案名稱
+        filename = secure_filename(file.filename)
+        # 加上時間戳避免檔名衝突
+        timestamp = secrets.token_hex(4)
+        name, ext = os.path.splitext(filename)
+        filename = f"{name}_{timestamp}{ext}"
+        
+        # 儲存檔案
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(file_path)
+        
+        # 返回完整路徑
+        full_path = os.path.abspath(file_path)
+        
+        return jsonify({
+            'success': True, 
+            'message': '檔案上傳成功',
+            'file_path': full_path,
+            'filename': filename
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'上傳失敗: {str(e)}'})
+
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, port=5000)

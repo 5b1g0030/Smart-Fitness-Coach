@@ -73,9 +73,10 @@ class SquatDetectionApp {
         this.modeModal.style.display = 'block';
     }
     
+    // 影片上傳
     showVideoUploadModal() {
-        this.modeModal.style.display = 'none';
-        this.videoUploadModal.style.display = 'block';
+        this.modeModal.style.display = 'none';          // 隱藏視窗
+        this.videoUploadModal.style.display = 'block';  // 顯示影片上傳視窗
     }
     
     async startCameraMode() {
@@ -120,20 +121,31 @@ class SquatDetectionApp {
         
         this.videoUploadModal.style.display = 'none';
         
-        // 這裡簡化處理，實際應用中需要上傳檔案到伺服器
-        // 目前使用檔案路徑（需要用戶手動輸入完整路徑）
-        const videoPath = prompt('請輸入影片檔案的完整路徑:');
-        if (!videoPath) return;
+        // 上傳檔案到伺服器
+        const formData = new FormData();
+        formData.append('video', file);
         
         try {
+            // 先上傳檔案
+            const uploadResponse = await fetch('/upload_video', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const uploadResult = await uploadResponse.json();
+            
+            if (!uploadResult.success) {
+                alert(`上傳失敗: ${uploadResult.message}`);
+                return;
+            }
+            
+            // 使用伺服器返回的檔案路徑開始檢測
             const response = await fetch('/start_detection', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     mode: 'video',
-                    video_path: videoPath
+                    video_path: uploadResult.file_path  // 使用伺服器路徑
                 })
             });
             
