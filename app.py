@@ -5,8 +5,12 @@ import os
 import threading
 import time
 import secrets
+import atexit
+import signal
+import shutil
+import glob
 from werkzeug.utils import secure_filename
-from pose_detector import StandardSquatAnalyzer, SquatDetectorWithStandard
+from squat_detector import StandardSquatAnalyzer, SquatDetectorWithStandard
 
 app = Flask(__name__)
 
@@ -189,6 +193,50 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+def cleanup_upload_folder():
+    """清理上傳資料夾中的所有檔案"""
+    try:
+        if os.path.exists(UPLOAD_FOLDER):
+            # 獲取資料夾中的所有檔案
+            files = glob.glob(os.path.join(UPLOAD_FOLDER, '*'))
+            for file_path in files:
+                try:
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                        print(f"已刪除檔案: {file_path}")
+                except Exception as e:
+                    print(f"刪除檔案 {file_path} 失敗: {e}")
+            print("Upload 資料夾清理完成")
+    except Exception as e:
+        print(f"清理 upload 資料夾失敗: {e}")
+
+def signal_handler(signum, frame):
+    """處理程式終止信號"""
+    print(f"接收到信號 {signum}，正在清理...")
+    cleanup_upload_folder()
+    flask_detector.stop()
+    exit(0)
+
+# 註冊程式退出時的清理函數
+atexit.register(cleanup_upload_folder)
+
+# 註冊信號處理器（處理 Ctrl+C 等強制終止）
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+
+@app.teardown_appcontext
+def cleanup_on_teardown(error):
+    """Flask 應用關閉時的清理"""
+    if error:
+        print(f"應用關閉時發生錯誤: {error}")
+
+# 在應用關閉時執行清理
+@atexit.register
+def cleanup_on_exit():
+    """程式退出時的最終清理"""
+    cleanup_upload_folder()
+    flask_detector.stop()
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -293,4 +341,11 @@ def upload_video():
         return jsonify({'success': False, 'message': f'上傳失敗: {str(e)}'})
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    try:
+        app.run(debug=True, port=5000)
+    except KeyboardInterrupt:
+        print("\n程式被中斷，正在清理...")
+        cleanup_upload_folder()
+        flask_detector.stop()
+    finally:
+        cleanup_upload_folder()
