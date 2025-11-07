@@ -340,6 +340,289 @@ def upload_video():
     except Exception as e:
         return jsonify({'success': False, 'message': f'上傳失敗: {str(e)}'})
 
+@app.route('/calculate_accuracy_stream')
+def calculate_accuracy_stream():
+    """使用 EventSource 進行影片準確度計算的串流回應"""
+    video_path = request.args.get('video_path', '')
+    
+    def generate_progress():
+        if not video_path or not os.path.exists(video_path):
+            yield f"data: {json.dumps({'type': 'error', 'message': '影片檔案不存在'})}\n\n"
+            return
+        
+        if flask_detector.standard_sequence is None:
+            yield f"data: {json.dumps({'type': 'error', 'message': '沒有標準動作資料'})}\n\n"
+            return
+        
+        try:
+            # 初始化影片讀取
+            yield f"data: {json.dumps({'type': 'progress', 'progress': 5, 'message': '正在初始化影片讀取...'})}\n\n"
+            
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                yield f"data: {json.dumps({'type': 'error', 'message': '無法開啟影片檔案'})}\n\n"
+                return
+            
+            # 獲取影片資訊
+            yield f"data: {json.dumps({'type': 'progress', 'progress': 10, 'message': '正在獲取影片資訊...'})}\n\n"
+            
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            
+            print(f"影片資訊: 總幀數={total_frames}, FPS={fps}")
+            
+            # 使用與影片播放模式相同的檢測器
+            yield f"data: {json.dumps({'type': 'progress', 'progress': 15, 'message': '正在初始化檢測器...'})}\n\n"
+            
+            detector = SquatDetectorWithStandard(
+                standard_sequence=flask_detector.standard_sequence,
+                squat_threshold=120,
+                similarity_threshold=0.6
+            )
+            
+            frame_count = 0
+            similarity_scores = []
+            squat_similarities = []  # 只記錄深蹲動作時的相似度
+            last_progress_update = 0
+            
+            yield f"data: {json.dumps({'type': 'progress', 'progress': 20, 'message': f'開始分析 {total_frames} 幀影片'})}\n\n"
+            
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                frame_count += 1
+                
+                # 轉換顏色格式
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                
+                # 使用與播放模式相同的姿勢檢測邏輯
+                results = detector.pose.process(rgb_frame)
+                
+                if results.pose_landmarks:
+                    h, w, _ = frame.shape
+                    
+                    # 使用檢測器的完整判斷邏輯
+                    is_squat, left_angle, right_angle, similarity, feedback = detector.is_squat_pose(
+                        results.pose_landmarks.landmark, w, h
+                    )
+                    
+                    # 記錄所有有效幀的相似度
+                    similarity_scores.append(similarity)
+                    
+                    # 只在深蹲動作時記錄相似度（與播放模式一致）
+                    if is_squat:
+                        squat_similarities.append(similarity)
+                    
+                    # 更新檢測器的計數（模擬播放模式的行為）
+                    detector.update_squat_count(is_squat, similarity)
+                
+                # 更新進度 - 從20%到90%
+                progress = 20 + (frame_count / total_frames) * 70
+                
+                # 減少進度更新頻率
+                if frame_count % 100 == 0 or progress - last_progress_update >= 2:
+                    last_progress_update = progress
+                    message = f'已處理 {frame_count}/{total_frames} 幀'
+                    if similarity_scores:
+                        current_avg = sum(similarity_scores) / len(similarity_scores) * 100
+                        message += f' (當前平均準確度: {current_avg:.1f}%)'
+                    
+                    # 顯示深蹲檢測統計
+                    if detector.squat_count > 0:
+                        squat_accuracy = (detector.correct_squat_count / detector.squat_count) * 100
+                        message += f' (深蹲準確率: {squat_accuracy:.1f}%)'
+                    
+                    yield f"data: {json.dumps({'type': 'progress', 'progress': progress, 'message': message})}\n\n"
+            
+            yield f"data: {json.dumps({'type': 'progress', 'progress': 95, 'message': '正在計算最終結果...'})}\n\n"
+            
+            cap.release()
+            detector.cleanup()
+            
+            # 計算最終結果 - 提供多種準確度計算方式
+            if similarity_scores:
+                # 方式1: 所有幀的平均相似度
+                average_accuracy = sum(similarity_scores) / len(similarity_scores) * 100
+                
+                # 方式2: 只計算深蹲動作幀的平均相似度
+                squat_average_accuracy = (sum(squat_similarities) / len(squat_similarities) * 100) if squat_similarities else 0
+                
+                # 方式3: 基於深蹲計數的準確率（與播放模式一致）
+                count_based_accuracy = (detector.correct_squat_count / detector.squat_count * 100) if detector.squat_count > 0 else 0
+                
+                result = {
+                    'type': 'result',
+                    'average_accuracy': average_accuracy,  # 所有幀的平均
+                    'squat_accuracy': squat_average_accuracy,  # 深蹲幀的平均
+                    'count_based_accuracy': count_based_accuracy,  # 計數式準確率
+                    'total_frames': total_frames,
+                    'valid_frames': len(similarity_scores),
+                    'squat_frames': len(squat_similarities),
+                    'squat_count': detector.squat_count,
+                    'correct_squat_count': detector.correct_squat_count
+                }
+                print(f"計算完成:")
+                print(f"  - 所有幀平均準確度: {average_accuracy:.2f}%")
+                print(f"  - 深蹲幀平均準確度: {squat_average_accuracy:.2f}%") 
+                print(f"  - 計數式準確率: {count_based_accuracy:.2f}%")
+                print(f"  - 深蹲次數: {detector.squat_count}, 正確次數: {detector.correct_squat_count}")
+            else:
+                result = {
+                    'type': 'result',
+                    'average_accuracy': 0,
+                    'squat_accuracy': 0,
+                    'count_based_accuracy': 0,
+                    'total_frames': total_frames,
+                    'valid_frames': 0,
+                    'squat_frames': 0,
+                    'squat_count': 0,
+                    'correct_squat_count': 0
+                }
+                print("警告: 影片中未檢測到有效的人體姿勢")
+            
+            yield f"data: {json.dumps(result)}\n\n"
+            
+        except Exception as e:
+            error_msg = f'計算過程發生錯誤: {str(e)}'
+            print(f"錯誤: {error_msg}")
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
+    
+    # 使用 EventSource 的標準回應格式
+    response = Response(generate_progress(), mimetype='text/event-stream')
+    response.headers['Cache-Control'] = 'no-cache'
+    response.headers['Connection'] = 'keep-alive'
+    response.headers['X-Accel-Buffering'] = 'no'
+    return response
+
+# 保留原有的 POST 路由作為備用
+@app.route('/calculate_accuracy', methods=['POST'])
+def calculate_accuracy():
+    """計算影片準確度 (備用方法)"""
+    def generate_progress():
+        data = request.json
+        video_path = data.get('video_path', '')
+        
+        if not video_path or not os.path.exists(video_path):
+            yield f"data: {json.dumps({'type': 'error', 'message': '影片檔案不存在'})}\n\n"
+            return
+        
+        if flask_detector.standard_sequence is None:
+            yield f"data: {json.dumps({'type': 'error', 'message': '沒有標準動作資料'})}\n\n"
+            return
+        
+        try:
+            # 初始化影片讀取
+            yield f"data: {json.dumps({'type': 'progress', 'progress': 5, 'message': '正在初始化影片讀取...'})}\n\n"
+            
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                yield f"data: {json.dumps({'type': 'error', 'message': '無法開啟影片檔案'})}\n\n"
+                return
+            
+            # 獲取影片資訊
+            yield f"data: {json.dumps({'type': 'progress', 'progress': 10, 'message': '正在獲取影片資訊...'})}\n\n"
+            
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            
+            print(f"影片資訊: 總幀數={total_frames}, FPS={fps}")
+            
+            # 初始化檢測器（用於計算模式）
+            yield f"data: {json.dumps({'type': 'progress', 'progress': 15, 'message': '正在初始化檢測器...'})}\n\n"
+            
+            detector = SquatDetectorWithStandard(
+                standard_sequence=flask_detector.standard_sequence,
+                squat_threshold=120,
+                similarity_threshold=0.6
+            )
+            
+            frame_count = 0
+            similarity_scores = []
+            
+            yield f"data: {json.dumps({'type': 'progress', 'progress': 20, 'message': f'開始分析 {total_frames} 幀影片'})}\n\n"
+            
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                frame_count += 1
+                
+                # 轉換顏色格式
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                
+                # 進行姿勢檢測
+                results = detector.pose.process(rgb_frame)
+                
+                if results.pose_landmarks:
+                    h, w, _ = frame.shape
+                    # 提取角度
+                    angles = detector.analyzer.extract_key_angles(
+                        results.pose_landmarks.landmark, w, h
+                    )
+                    
+                    if angles:
+                        # 計算與標準動作的相似度
+                        similarity, _ = detector.compare_with_standard(angles)
+                        similarity_scores.append(similarity)
+                
+                # 更新進度 - 從20%到90%
+                progress = 20 + (frame_count / total_frames) * 70
+                
+                # 更頻繁地發送進度更新
+                if frame_count % 10 == 0:  # 改為每10幀發送一次
+                    message = f'已處理 {frame_count}/{total_frames} 幀'
+                    if similarity_scores:
+                        current_avg = sum(similarity_scores) / len(similarity_scores) * 100
+                        message += f' (當前平均準確度: {current_avg:.1f}%)'
+                    
+                    yield f"data: {json.dumps({'type': 'progress', 'progress': progress, 'message': message})}\n\n"
+                    
+                    # 強制刷新輸出緩衝區
+                    import sys
+                    sys.stdout.flush()
+            
+            yield f"data: {json.dumps({'type': 'progress', 'progress': 95, 'message': '正在計算最終結果...'})}\n\n"
+            
+            cap.release()
+            detector.cleanup()
+            
+            # 計算結果
+            if similarity_scores:
+                average_accuracy = sum(similarity_scores) / len(similarity_scores) * 100
+                result = {
+                    'type': 'result',
+                    'average_accuracy': average_accuracy,
+                    'total_frames': total_frames,
+                    'valid_frames': len(similarity_scores)
+                }
+                print(f"計算完成: 平均準確度={average_accuracy:.2f}%, 有效幀數={len(similarity_scores)}/{total_frames}")
+            else:
+                result = {
+                    'type': 'result',
+                    'average_accuracy': 0,
+                    'total_frames': total_frames,
+                    'valid_frames': 0
+                }
+                print("警告: 影片中未檢測到有效的人體姿勢")
+            
+            yield f"data: {json.dumps(result)}\n\n"
+            
+        except Exception as e:
+            error_msg = f'計算過程發生錯誤: {str(e)}'
+            print(f"錯誤: {error_msg}")
+            yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
+    
+    # 設置適當的響應頭
+    response = Response(generate_progress(), mimetype='text/event-stream')
+    response.headers['Cache-Control'] = 'no-cache'
+    response.headers['X-Accel-Buffering'] = 'no'
+    return response
+
 if __name__ == '__main__':
     try:
         app.run(debug=True, port=5000)

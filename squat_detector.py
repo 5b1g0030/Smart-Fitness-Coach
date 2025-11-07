@@ -55,6 +55,9 @@ class StandardSquatAnalyzer:
         try:
             # ----- 轉換座標 -----
             # 關鍵點座標（0~1）轉換成影像上的實際像素位置，方便後續角度計算或繪圖
+            # landmark.x , landmark.y => 正規化座標「比例（0~1）」，形容此物體位於畫面多少%的位置
+            # frame_width , frame_height => 畫面解析度「寬 , 高」，整個畫面大小
+            # 物體位置比例*整個畫面 = 物體在畫面上的實際位置
             # ------------------- 
             def get_coords(landmark):
                 return [landmark.x * frame_width, landmark.y * frame_height]
@@ -62,14 +65,14 @@ class StandardSquatAnalyzer:
             # ----- 獲取關鍵點 -----
             # 呼叫「轉換座標函式」
             # --------------------- 
-            left_shoulder = get_coords(landmarks[self.mp_pose.PoseLandmark.LEFT_SHOULDER.value])
-            right_shoulder = get_coords(landmarks[self.mp_pose.PoseLandmark.RIGHT_SHOULDER.value])
-            left_hip = get_coords(landmarks[self.mp_pose.PoseLandmark.LEFT_HIP.value])
-            right_hip = get_coords(landmarks[self.mp_pose.PoseLandmark.RIGHT_HIP.value])
-            left_knee = get_coords(landmarks[self.mp_pose.PoseLandmark.LEFT_KNEE.value])
-            right_knee = get_coords(landmarks[self.mp_pose.PoseLandmark.RIGHT_KNEE.value])
-            left_ankle = get_coords(landmarks[self.mp_pose.PoseLandmark.LEFT_ANKLE.value])
-            right_ankle = get_coords(landmarks[self.mp_pose.PoseLandmark.RIGHT_ANKLE.value])
+            left_shoulder = get_coords(landmarks[self.mp_pose.PoseLandmark.LEFT_SHOULDER.value])    # 左肩膀
+            right_shoulder = get_coords(landmarks[self.mp_pose.PoseLandmark.RIGHT_SHOULDER.value])  # 右肩膀
+            left_hip = get_coords(landmarks[self.mp_pose.PoseLandmark.LEFT_HIP.value])    # 左髖部
+            right_hip = get_coords(landmarks[self.mp_pose.PoseLandmark.RIGHT_HIP.value])  # 右髖部
+            left_knee = get_coords(landmarks[self.mp_pose.PoseLandmark.LEFT_KNEE.value])    # 左膝蓋
+            right_knee = get_coords(landmarks[self.mp_pose.PoseLandmark.RIGHT_KNEE.value])  # 右膝蓋
+            left_ankle = get_coords(landmarks[self.mp_pose.PoseLandmark.LEFT_ANKLE.value])   # 左腳踝 
+            right_ankle = get_coords(landmarks[self.mp_pose.PoseLandmark.RIGHT_ANKLE.value]) # 右腳踝
             
             # ----- 計算關鍵角度 -----
             # 這個字典會被用來分析每一幀的深蹲動作品質，並累積成「標準動作序列」或即時比對用的資料
@@ -94,20 +97,20 @@ class StandardSquatAnalyzer:
             print(f"提取角度時發生錯誤: {e}")
             return None
     
-    # ===== 計算角度的函數 =====
-    # 計算三個點形成的角度
-    # a => 第一個點座標 (x, y)
-    # b => 頂點座標 (x, y) 
-    # c => 第三個點座標 (x, y)
-    # 返回角度值（度數）
+    # ===== 計算關節角度的函數 =====
+    # 輸入 髖部、膝蓋、腳踝
+    # 輸出 角度值（度數）
     # =========================  
     def calculate_angle(self, a, b, c):
         # 將座標轉換為numpy陣列
-        a = np.array(a)
-        b = np.array(b)
-        c = np.array(c)
-        
+        a = np.array(a) # 髖部（hip）
+        b = np.array(b) # 膝蓋（knee） <- 頂點
+        c = np.array(c) # 腳踝（ankle）
+    
+        # ---計算三個點形成的角度---
         # 計算向量
+        # np.arctan2(c[1] - b[1], c[0] - b[0]) => 向量 b→c 的角度
+        # np.arctan2(a[1] - b[1], a[0] - b[0]) => 向量 b→a 的角度
         radians = np.arctan2(c[1] - b[1], c[0] - b[0]) - np.arctan2(a[1] - b[1], a[0] - b[0])
         angle = np.abs(radians * 180.0 / np.pi)
         
@@ -444,6 +447,7 @@ class SquatDetectorWithStandard:
         left_knee_angle = angles['left_knee_angle'] # 左膝蓋
         right_knee_angle = angles['right_knee_angle'] # 右膝蓋
         
+        # 判斷是否為「深蹲」 => 左右膝蓋都小於120度
         is_squat = (left_knee_angle < self.squat_threshold and 
                    right_knee_angle < self.squat_threshold)
         

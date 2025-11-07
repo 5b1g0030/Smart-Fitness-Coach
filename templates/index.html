@@ -83,6 +83,14 @@
                         <p>上傳影片檔案進行分析</p>
                     </div>
                 </button>
+                
+                <button id="accuracyMode" class="mode-btn">
+                    <span class="mode-icon">📊</span>
+                    <div class="mode-text">
+                        <h3>影片輸入&計算準確度</h3>
+                        <p>分析影片並計算平均準確度</p>
+                    </div>
+                </button>
             </div>
         </div>
     </div>
@@ -104,6 +112,55 @@
                     </div>
                     <div id="fileName" class="file-name" style="display: none;"></div>
                     <button id="uploadBtn" class="upload-btn" style="display: none;">開始分析</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 準確度計算視窗 -->
+    <div id="accuracyModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>計算影片準確度</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="upload-area">
+                    <input type="file" id="accuracyVideoFile" accept="video/*" style="display: none;">
+                    <div class="upload-placeholder" onclick="document.getElementById('accuracyVideoFile').click();">
+                        <span class="upload-icon">📁</span>
+                        <p>點擊選擇影片檔案</p>
+                        <p class="upload-hint">支援 MP4, AVI, MOV 等格式</p>
+                    </div>
+                    <div id="accuracyFileName" class="file-name" style="display: none;"></div>
+                    <button id="calculateBtn" class="upload-btn" style="display: none;">開始計算準確度</button>
+                    
+                    <!-- 計算進度區域 -->
+                    <div id="progressArea" class="progress-area" style="display: none;">
+                        <div class="progress-bar">
+                            <div id="progressFill" class="progress-fill"></div>
+                        </div>
+                        <div id="progressText" class="progress-text">準備中...</div>
+                    </div>
+                    
+                    <!-- 結果顯示區域 -->
+                    <div id="resultArea" class="result-area" style="display: none;">
+                        <h3>分析結果</h3>
+                        <div class="result-item">
+                            <span class="result-label">主要準確度:</span>
+                            <span id="avgAccuracy" class="result-value">0%</span>
+                        </div>
+                        <div class="result-item">
+                            <span class="result-label">總幀數:</span>
+                            <span id="totalFrames" class="result-value">0</span>
+                        </div>
+                        <div class="result-item">
+                            <span class="result-label">有效幀數:</span>
+                            <span id="validFrames" class="result-value">0</span>
+                        </div>
+                        <!-- 詳細資訊將通過 JavaScript 動態插入到這裡 -->
+                        <button id="closeResultBtn" class="upload-btn">關閉</button>
+                    </div>
                 </div>
             </div>
         </div>
