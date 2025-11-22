@@ -296,16 +296,22 @@ class SquatDetectorWithStandard:
         self.analyzer = StandardSquatAnalyzer() # 引入「標準深蹲動作分析器(類別)」
     
     # ===== 比較當前姿勢與標準動作的相似度 =====
-    # 1. 檢查「標準動作序列&目前角度資料」是否有資料
-    # 2. 記錄當前動作序列
-    # 3. 限制序列長度
-    # 4. 檢查序列是否太短
-    # 5. 提取關鍵角度序列進行比較
-    # 6. 讀取當前序列的角度
-    # 7. 檢查「標準角度序列&目前角度序列」是否有資料
-    # 8.  
+    # 輸入 關鍵點角度
+    # 輸出 
+    # =======================================  
     def compare_with_standard(self, current_angles):
         
+        """
+            1. 檢查「標準動作序列&目前角度資料」是否有資料
+            2. 記錄當前動作序列
+            3. 限制序列長度
+            4. 檢查序列是否太短
+            5. 提取關鍵角度序列進行比較
+            6. 讀取當前序列的角度
+            7. 檢查「標準角度序列&目前角度序列」是否有資料
+            8. 
+        """
+
         # ----- 檢查「標準動作序列&目前角度資料」是否有資料 -----
         if not self.standard_sequence or not current_angles:
             return 0.0, "無標準資料" # 回傳「相似度 0.0」，代表無資料
@@ -575,7 +581,7 @@ class SquatDetectorWithStandard:
     # 5. 更新計數
     # 6. 繪製資訊
     # ========================
-    def process_frame(self, frame, mirror=True):
+    def process_frame(self, frame, mirror=True, show_info=True):
         
         # ----- 畫面左右顛倒 -----
         # 鏡像效果，符合使用者視角（僅在攝像頭模式需要）
@@ -622,7 +628,10 @@ class SquatDetectorWithStandard:
             )
         
         # 繪製狀態資訊
-        self.draw_status_info(frame, is_squat, left_angle, right_angle, similarity, feedback, has_pose)
+        # 只有在 show_info=True 時才繪製狀態資訊
+        if show_info:
+            self.draw_status_info(frame, is_squat, left_angle, right_angle, similarity, feedback, has_pose)
+
         return frame
 
     # ===== 重設計數器 =====     
@@ -649,7 +658,8 @@ def show_menu():
     print("2. 分析標準深蹲影片")
     print("3. 測試影片分析")
     print("4. 載入現有的標準動作資料")
-    print("5. 退出程式")
+    print("5. 測試幾秒完成深蹲")
+    print("6. 退出程式")
     print("="*60)
 
 # ===== 攝像頭即時檢測模式 =====
@@ -795,6 +805,12 @@ def analyze_standard_video_mode():
     except Exception as e:
         print(f"分析標準影片時發生錯誤: {e}")
         return None
+    
+"""
+新增一個「深蹲計時」功能，在輸入影片後，開啟計時器，
+直到人物動作被判斷成「深蹲」後停止，並不再播放後續影片，
+在終端上顯示「從站立到深蹲共x秒」，使用影片原速度。
+"""
 
 # ===== 測試影片分析模式 =====
 # 1. 檢查有沒有標準動作資料 
@@ -997,6 +1013,145 @@ def load_standard_sequence_mode():
         print(f"載入標準序列時發生錯誤: {e}")
         return None
 
+# ===== 測試深蹲完成時間模式 =====
+# 1. 檢查有沒有標準動作資料
+# 2. 輸入影片
+# 3. 檢查影片是否存在
+# 4. 初始化影片讀取
+# 5. 初始化檢測器和計時器
+# 6. 主要分析迴圈直到檢測到深蹲
+# ================================
+def squat_timing_mode(standard_sequence):
+    
+    print("\n=== 測試深蹲完成時間模式 ===")
+    
+    # ----- 檢查有沒有標準動作資料 -----
+    if not standard_sequence:
+        print("錯誤：沒有標準動作資料，請先分析標準影片或載入標準動作資料")
+        return
+    
+    # ----- 輸入影片 -----
+    video_path = input("請輸入測試影片路徑: ").strip()
+    if not video_path:
+        print("未提供影片路徑，返回主選單")
+        return
+    
+    # ----- 檢查影片是否存在 -----
+    if not os.path.exists(video_path):
+        print(f"影片文件不存在: {video_path}")
+        return
+    
+    # ----- 初始化影片讀取 -----
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print(f"無法開啟測試影片: {video_path}")
+        return
+    
+    # ----- 初始化檢測器 -----
+    detector = SquatDetectorWithStandard(
+        standard_sequence=standard_sequence,
+        squat_threshold=100,
+        similarity_threshold=0.6
+    )
+    
+    # ----- 獲取影片資訊 -----
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    duration = total_frames / fps if fps > 0 else 0
+    
+    print("\n使用說明：")
+    print("- 程式將分析影片直到檢測到第一次深蹲動作")
+    print("- 檢測到深蹲後會自動停止並顯示耗時")
+    print("- 按 'q' 鍵可提前退出分析")
+    print(f"- 影片總時長: {duration:.2f}秒")
+    print("-" * 50)
+    
+    frame_count = 0
+    start_time = None
+    squat_detected = False
+    
+    try:
+        # ----- 主要分析迴圈 -----
+        while cap.isOpened() and not squat_detected:
+            # ----- 讀取影片畫面 -----
+            ret, frame = cap.read()
+            if not ret:
+                print("影片播放完畢，未檢測到深蹲動作")
+                break
+            
+            frame_count += 1
+            current_time = frame_count / fps if fps > 0 else 0
+            
+            # 記錄開始時間（第一幀）
+            if start_time is None:
+                start_time = current_time
+                print("開始分析...")
+            
+            # ----- 處理影格並檢測深蹲 -----
+            processed_frame = detector.process_frame(frame, mirror=False, show_info=False)
+            
+            # ----- 檢查是否檢測到深蹲 -----
+            if detector.squat_count > 0:
+                squat_detected = True
+                elapsed_time = current_time - start_time
+                
+                # 在畫面上顯示結果
+                cv2.putText(processed_frame, f"SQUAT DETECTED!", 
+                           (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 4)
+                cv2.putText(processed_frame, f"Time: {elapsed_time:.2f} seconds", 
+                           (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 3)
+                cv2.putText(processed_frame, "Press any key to exit", 
+                           (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                
+                # 顯示最終畫面
+                scale = 0.6
+                processed_frame = cv2.resize(processed_frame, None, fx=scale, fy=scale)
+                cv2.namedWindow('Squat Timing Test', cv2.WINDOW_NORMAL)
+                cv2.imshow('Squat Timing Test', processed_frame)
+                
+                # 在終端顯示結果
+                print(f"\n🎉 深蹲動作檢測成功！")
+                print(f"⏱️  完成時間: {elapsed_time:.2f} 秒")
+                print(f"📊 總處理幀數: {frame_count}")
+                print("按任意鍵關閉視窗...")
+                
+                # 等待使用者按鍵後退出
+                cv2.waitKey(0)
+                break
+            
+            # ----- 顯示即時分析畫面 -----
+            # 在畫面上顯示當前時間和狀態
+            cv2.putText(processed_frame, f"Analyzing... {current_time:.1f}s", 
+                       (10, processed_frame.shape[0] - 60), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+            cv2.putText(processed_frame, "Waiting for squat detection...", 
+                       (10, processed_frame.shape[0] - 30), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            
+            # 縮放並顯示畫面
+            scale = 0.6
+            processed_frame = cv2.resize(processed_frame, None, fx=scale, fy=scale)
+            cv2.namedWindow('Squat Timing Test', cv2.WINDOW_NORMAL)
+            cv2.imshow('Squat Timing Test', processed_frame)
+            
+            # ----- 處理按鍵事件 -----
+            wait_time = int(1000 / fps) if fps > 0 else 30
+            key = cv2.waitKey(wait_time) & 0xFF
+            if key == ord('q'):
+                print("使用者提前退出分析")
+                break
+    
+    finally:
+        # ----- 釋放資源 -----
+        cap.release()
+        detector.cleanup()
+        cv2.destroyAllWindows()
+        
+        if not squat_detected and frame_count > 0:
+            total_analyzed_time = frame_count / fps if fps > 0 else 0
+            print(f"\n分析結束，未檢測到深蹲動作")
+            print(f"已分析時長: {total_analyzed_time:.2f}秒")
+
 # ===== 主函式 =====
 def main():
     
@@ -1004,11 +1159,21 @@ def main():
     
     # 儲存標準動作序列
     standard_sequence = None
+
+    # 載入現有的標準動作資料
+    result = load_standard_sequence_mode() # 呼叫「載入現有標準動作資料模式函式」
+    # 檢查分析標準影片或載入標準資料是否成功
+    if result:
+        standard_sequence = result # 如果成功，將分析或載入得到的標準動作序列資料儲存
+        print("標準動作資料載入成功")
+    else:
+        print("標準動作資料載入失敗...")
+            
     
     while True:
         try:
             show_menu() # 呼叫「顯示功能選單函式」
-            choice = input("\n請選擇功能 (1-5): ").strip() # 使用者輸入(去空白)
+            choice = input("\n請選擇功能 (1-6): ").strip() # 使用者輸入(去空白)
             
             # 1. 即時攝像頭檢測
             if choice == '1':
@@ -1033,22 +1198,18 @@ def main():
                 # 測試影片分析
                 test_video_analysis_mode(standard_sequence) # 呼叫「測試影片分析模式函式」
                 
-            # 4. 載入現有的標準動作資料
-            elif choice == '4':
-                result = load_standard_sequence_mode() # 呼叫「載入現有標準動作資料模式函式」
-                # 檢查分析標準影片或載入標準資料是否成功
-                if result:
-                    standard_sequence = result # 如果成功，將分析或載入得到的標準動作序列資料儲存
-                    print("標準動作資料載入成功，現在可以使用其他功能了！")
-            
-            # 5. 退出程式
+            # 5. 測試幾秒完成深蹲
             elif choice == '5':
+                squat_timing_mode(standard_sequence) # 呼叫「測試深蹲完成時間模式函式」
+            
+            # 6. 退出程式
+            elif choice == '6':
                 print("感謝使用深蹲姿勢檢測程式！")
                 break # 跳出無限迴圈
             
             # 例外輸入處理  
             else:
-                print("無效選擇，請輸入 1-5 的數字")
+                print("無效選擇，請輸入 1-6 的數字")
         # 例外: 使用者在終端機按下 Ctrl+C（或其他中斷鍵），主動中斷程式執行        
         except KeyboardInterrupt:
             print("\n\n程式被使用者中斷")
