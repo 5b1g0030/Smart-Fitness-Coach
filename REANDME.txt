@@ -7,11 +7,12 @@
 ** 僅Windows適用 **
 
 == 執行前安裝 ==
-python -m pip install opencv-python mediapipe numpy dtw-python flask pillow
+使 python 3.10.11
+python -m pip install opencv-python mediapipe numpy scipy dtw-python pillow
 
 python -m pip install pillow -> 需要在視窗上顯示中文時
 
-== 動作影片引用路徑 ==
+== 動作影片引用路徑(本機) ==
 D:\Users\Gina\Desktop\python project\video\
 
 影片名稱:
