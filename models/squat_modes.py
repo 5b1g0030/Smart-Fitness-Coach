@@ -1,8 +1,16 @@
 import cv2      # 存取攝像頭、讀取和顯示影像、處理影像（如翻轉、加文字等）
 import os       # 檢查檔案路徑、建立、儲存檔案
-import csv      # 儲存csv檔案
-import datetime # 計時器
-from models.squat import SquatDetectorWithStandard, StandardSquatAnalyzer # 引入深蹲偵測器
+# import csv      # 儲存csv檔案
+# import datetime # 計時器
+from models.squat_detector_with_standard import StandardSquatAnalyzer # 引入深蹲偵測器
+# 新增：從 util 匯入攝像頭與影片工具
+from models.util import open_camera, release_camera, open_video, get_video_info, release_video
+# 新增：從 detector_manager 匯入管理函式
+from models.detector_manager import init_detector, get_detector, reset_detector, cleanup_detector
+# 新增：從 file.py 匯入用戶資料與檔案儲存管理
+from models.file import collect_user_data, save_test_result
+# 新增：匯入畫面顯示工具
+from models.draw import draw_squat_detected, draw_progress, draw_timing_overlay, draw_press_start_hint, draw_quit_hint
 
 # ===== 攝像頭即時檢測模式 =====
 def camera_detection_mode(standard_sequence):
@@ -10,23 +18,15 @@ def camera_detection_mode(standard_sequence):
     print("\n=== 攝像頭即時檢測模式 ===")
     
     # ----- 初始化攝像頭 -----
-    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-    
-    # ----- 設定攝像頭解析度 (可選) -----
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 920)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 540)
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+    cap = open_camera(device=0, width=920, height=540, fourcc='MJPG')
     
     # ----- 檢查攝像頭是否正常開啟 -----
     if not cap.isOpened():
         raise Exception("無法開啟攝像頭")
     
-    # ----- 初始化檢測器 -----
-    detector = SquatDetectorWithStandard(
-        standard_sequence=standard_sequence,
-        squat_threshold=120,
-        similarity_threshold=0.6
-    )
+    # ----- 初始化檢測器（使用集中管理） -----
+    init_detector(standard_sequence, squat_threshold=120, similarity_threshold=0.6)
+    detector = get_detector()
     
     # ----- 顯示操作提示 -----
     print("\n使用說明：")
@@ -61,7 +61,7 @@ def camera_detection_mode(standard_sequence):
                 print("使用者按下 'q' 鍵，退出攝像頭模式")
                 break
             elif key == ord('r'):
-                detector.reset_counters()
+                reset_detector()
     
     finally:
         # ===== 釋放資源並顯示結果 =====
@@ -72,16 +72,11 @@ def camera_detection_mode(standard_sequence):
             accuracy = detector.correct_squat_count / detector.squat_count * 100
             print(f"正確率: {accuracy:.1f}%")
         
-        cap.release()
-        detector.cleanup()
+        release_camera(cap)
+        cleanup_detector()
         cv2.destroyAllWindows()
 
 # ===== 分析標準深蹲影片模式 =====
-# 1. 輸入影片
-# 2. 檢查是否有路徑 -> none
-# 2. 檢查影片是否存在 -> none
-# 3. 分析標準影片
-# ============================== 
 def analyze_standard_video_mode():
     
     print("\n=== 分析標準深蹲影片模式 ===")
@@ -113,18 +108,8 @@ def analyze_standard_video_mode():
     except Exception as e:
         print(f"分析標準影片時發生錯誤: {e}")
         return None
-    
 
 # ===== 測試影片分析模式 =====
-# 1. 檢查有沒有標準動作資料 
-# 2. 輸入影片
-# 3. 檢查影片是否存在
-# 4. 初始化影片讀取
-# 5. 檢查影片是否能讀取
-# 6. 初始化檢測器
-# 7. 獲取影片資訊
-# 8. 主要分析迴圈(...)
-# =========================== 
 def test_video_analysis_mode(standard_sequence):
     
     print("\n=== 測試影片分析模式 ===")
@@ -152,17 +137,15 @@ def test_video_analysis_mode(standard_sequence):
         return
     
     # ----- 初始化影片讀取 -----
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        print(f"無法開啟測試影片: {video_path}")
+    try:
+        cap = open_video(video_path)
+    except Exception as e:
+        print(e)
         return
     
-    # ----- 初始化檢測器 -----
-    detector = SquatDetectorWithStandard(
-        standard_sequence=standard_sequence,
-        squat_threshold=120,
-        similarity_threshold=0.6
-    )
+    # ----- 初始化檢測器（使用集中管理） -----
+    init_detector(standard_sequence, squat_threshold=120, similarity_threshold=0.6)
+    detector = get_detector()
     
     # 文字提示
     print("\n使用說明：")
@@ -175,9 +158,7 @@ def test_video_analysis_mode(standard_sequence):
     print("-" * 50)
     
     # ----- 獲取影片資訊 -----
-    fps = cap.get(cv2.CAP_PROP_FPS) # 影片幀數
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) # 影片總幀數
-    duration = total_frames / fps if fps > 0 else 0 # 計算影片總時長（秒）
+    fps, total_frames, duration = get_video_info(cap)
     
     # 顯示影片資訊
     print(f"影片資訊：")
@@ -229,19 +210,14 @@ def test_video_analysis_mode(standard_sequence):
                 if detector.squat_count > 0:
                     squat_detected = True
                     elapsed_time = current_time - start_time
-                    
-                    # 在畫面上顯示結果
-                    cv2.putText(processed_frame, f"SQUAT DETECTED!", 
-                               (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 4)
-                    cv2.putText(processed_frame, f"Time: {elapsed_time:.2f} seconds", 
-                               (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 3)
-                    cv2.putText(processed_frame, "Press any key to exit", 
-                               (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                    
+
+                    # 在畫面上顯示結果（改用 draw 模組）
+                    draw_squat_detected(processed_frame, elapsed_time)
+
                     # 設定視窗可調整大小並顯示最終畫面
                     cv2.namedWindow('Squat Timing Test - Video Mode', cv2.WINDOW_NORMAL)
                     cv2.imshow('Squat Timing Test - Video Mode', processed_frame)
-                    
+
                     # 在終端顯示結果
                     print(f"\n🎉 深蹲動作檢測成功！")
                     print(f"⏱️  完成時間: {elapsed_time:.2f} 秒")
@@ -260,16 +236,9 @@ def test_video_analysis_mode(standard_sequence):
                 progress = frame_count / total_frames * 100 if total_frames > 0 else 0
                 current_time = frame_count / fps if fps > 0 else 0
                 
-                # 顯示目前分析進度（百分比和秒數），方便使用者了解影片播放狀態
-                cv2.putText(processed_frame, f"Progress: {progress:.1f}% ({current_time:.1f}s/{duration:.1f}s)", 
-                           (10, processed_frame.shape[0] - 60), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 1.5, (131,131,131), 2)
-                
-                # 顯示的提示文字，告訴使用者如何暫停或退出影片分析
-                cv2.putText(processed_frame, "Press 'p' or SPACE to pause, 'q' to quit", 
-                           (10, processed_frame.shape[0] - 30), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 1.5, (131,131,131), 2)
-            
+                # 使用 draw 提供的進度顯示
+                draw_progress(processed_frame, progress, current_time, duration)
+
             # ----- 縮放畫面 -----
             # None => 目標尺寸（dsize），設為 None 代表用比例縮放，不直接指定寬高
             # fx => 水平方向縮放比例(寬度)
@@ -301,7 +270,7 @@ def test_video_analysis_mode(standard_sequence):
                 print("使用者按下 'q' 鍵，退出影片分析")
                 break
             elif key == ord('r'): # 按 'r' 鍵重設計數
-                detector.reset_counters()
+                reset_detector()
             elif key == ord('p') or key == ord(' '): # 按 'p' 鍵或空白鍵暫停/繼續
                 paused = not paused
                 if paused:
@@ -318,15 +287,11 @@ def test_video_analysis_mode(standard_sequence):
             accuracy = detector.correct_squat_count / detector.squat_count * 100
             print(f"正確率: {accuracy:.1f}%")
         
-        cap.release()
-        detector.cleanup()
+        release_video(cap)
+        cleanup_detector()
         cv2.destroyAllWindows()
 
 # ===== 載入現有標準動作資料模式 =====
-# 1. 輸入標準動作資料檔案路徑
-# 2. 檢查檔案是否存在
-# 3. 檢查標準序列檔案是否正常讀取
-# ================================== 
 def load_standard_sequence_mode():
 
     print("\n=== 載入標準動作資料模式 ===")
@@ -358,10 +323,6 @@ def load_standard_sequence_mode():
         return None
 
 # ===== 測試深蹲完成時間模式 =====
-# 1. 檢查有沒有標準動作資料
-# 2. 選擇測試模式（影片或即時鏡頭）
-# 3. 根據選擇執行對應模式
-# ================================
 def squat_timing_mode(standard_sequence):
     
     print("\n=== 測試深蹲完成時間模式 ===")
@@ -393,78 +354,6 @@ def squat_timing_mode(standard_sequence):
         else:
             print("無效選擇，請輸入 1 或 2")
 
-# ===== 收集用戶資料 =====
-def collect_user_data():
-    """收集用戶基本資料"""
-    print("\n=== 用戶資料登記 ===")
-    
-    # 收集姓名
-    while True:
-        name = input("請輸入姓名: ").strip()
-        if name:
-            break
-        print("姓名不能為空，請重新輸入")
-    
-    # 收集性別
-    while True:
-        gender = input("請輸入性別 (男/女): ").strip()
-        if gender in ['男', '女']:
-            break
-        print("請輸入 '男' 或 '女'")
-    
-    # 收集年齡
-    while True:
-        try:
-            age = int(input("請輸入年齡: ").strip())
-            if 1 <= age <= 120:
-                break
-            else:
-                print("年齡請輸入 1-120 之間的數字")
-        except ValueError:
-            print("請輸入有效的數字")
-    
-    return name, gender, age
-
-# ===== 儲存測試結果到CSV =====
-def save_test_result(name, gender, age, completion_time, mode):
-    """儲存測試結果到CSV檔案"""
-    
-    # 確保data資料夾存在
-    data_folder = "data"
-    if not os.path.exists(data_folder):
-        os.makedirs(data_folder)
-        print(f"已創建 {data_folder} 資料夾")
-    
-    # CSV檔案路徑
-    csv_file_path = os.path.join(data_folder, "squat_timing_results.csv")
-    
-    # 檢查檔案是否存在，決定是否需要寫入標題列
-    file_exists = os.path.exists(csv_file_path)
-    
-    try:
-        # 準備要寫入的資料
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        row_data = [current_time, name, gender, age, f"{completion_time:.2f}", mode]
-        
-        # 寫入CSV檔案
-        with open(csv_file_path, 'a', newline='', encoding='utf-8-sig') as csvfile:
-            writer = csv.writer(csvfile)
-            
-            # 如果檔案不存在，先寫入標題列
-            if not file_exists:
-                headers = ['測試時間', '姓名', '性別', '年齡', '完成秒數', '測試模式']
-                writer.writerow(headers)
-            
-            # 寫入測試結果
-            writer.writerow(row_data)
-        
-        print(f"✅ 測試結果已儲存到: {csv_file_path}")
-        return True
-        
-    except Exception as e:
-        print(f"❌ 儲存測試結果時發生錯誤: {e}")
-        return False
-
 # ===== 深蹲計時 - 影片模式 =====
 def squat_timing_video_mode(standard_sequence, name, gender, age):
     
@@ -482,22 +371,18 @@ def squat_timing_video_mode(standard_sequence, name, gender, age):
         return
     
     # ----- 初始化影片讀取 -----
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        print(f"無法開啟測試影片: {video_path}")
+    try:
+        cap = open_video(video_path)
+    except Exception as e:
+        print(e)
         return
     
-    # ----- 初始化檢測器 -----
-    detector = SquatDetectorWithStandard(
-        standard_sequence=standard_sequence,
-        squat_threshold=100,
-        similarity_threshold=0.6
-    )
+    # ----- 初始化檢測器（使用集中管理） -----
+    init_detector(standard_sequence, squat_threshold=100, similarity_threshold=0.6)
+    detector = get_detector()
     
     # ----- 獲取影片資訊 -----
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    duration = total_frames / fps if fps > 0 else 0
+    fps, total_frames, duration = get_video_info(cap)
     
     print(f"\n測試者：{name} ({gender}，{age}歲)")
     print("\n使用說明：")
@@ -535,19 +420,13 @@ def squat_timing_video_mode(standard_sequence, name, gender, age):
             if detector.squat_count > 0:
                 squat_detected = True
                 elapsed_time = current_time - start_time
-                
+
                 # 在畫面上顯示結果
-                cv2.putText(processed_frame, f"SQUAT DETECTED!", 
-                           (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 4)
-                cv2.putText(processed_frame, f"Time: {elapsed_time:.2f} seconds", 
-                           (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 3)
-                cv2.putText(processed_frame, "Press any key to exit", 
-                           (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                
-                # 設定視窗可調整大小並顯示最終畫面
+                draw_squat_detected(processed_frame, elapsed_time)
+
                 cv2.namedWindow('Squat Timing Test - Video Mode', cv2.WINDOW_NORMAL)
                 cv2.imshow('Squat Timing Test - Video Mode', processed_frame)
-                
+
                 # 在終端顯示結果
                 print(f"\n🎉 深蹲動作檢測成功！")
                 print(f"👤 測試者：{name} ({gender}，{age}歲)")
@@ -566,60 +445,13 @@ def squat_timing_video_mode(standard_sequence, name, gender, age):
             # ----- 在畫面上顯示進度資訊 -----
             progress = frame_count / total_frames * 100 if total_frames > 0 else 0
             current_time = frame_count / fps if fps > 0 else 0
-            
-            # 顯示目前分析進度（百分比和秒數），方便使用者了解影片播放狀態
-            cv2.putText(processed_frame, f"Progress: {progress:.1f}% ({current_time:.1f}s/{duration:.1f}s)", 
-                       (10, processed_frame.shape[0] - 60), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1.5, (131,131,131), 2)
-            
-            # 顯示的提示文字，告訴使用者如何暫停或退出影片分析
-            cv2.putText(processed_frame, "Press 'p' or SPACE to pause, 'q' to quit", 
-                       (10, processed_frame.shape[0] - 30), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1.5, (131,131,131), 2)
-            
-            # ----- 縮放畫面 -----
-            # None => 目標尺寸（dsize），設為 None 代表用比例縮放，不直接指定寬高
-            # fx => 水平方向縮放比例(寬度)
-            # fy => 垂直方向縮放比例(高度)
-            # ------------------- 
-            scale = 0.6 # 畫面比例(原本的60%)
-            processed_frame = cv2.resize(processed_frame, None, fx=scale, fy=scale)
-            cv2.namedWindow('Video Squat Analysis', cv2.WINDOW_NORMAL)  # 讓視窗可調整大小
-            
-            # ----- 顯示畫面 -----
-            # 視窗名稱、影像
-            # -------------------
-            cv2.imshow('Video Squat Analysis', processed_frame)
-            
-            # ----- 處理按鍵事件 -----
-            # fps => 影片每秒幀數
-            # if fps > 0 and not paused => 只有在影片有 fps 且沒暫停時，才用正常速度播放
-            # else 1：如果暫停或 fps 不正確，則每次只等待 1 毫秒（讓程式能即時處理按鍵）
-            # ----------------------- 
-            wait_time = int(1000 / fps) if fps > 0 and not paused else 1
 
-            # ----- 等待使用者按鍵 -----
-            # wait_time => 暫停指定毫秒數 
-            # & 0xFF => 只取按鍵的低 8 位元（確保跨平台一致）
-            # ------------------------- 
-            key = cv2.waitKey(wait_time) & 0xFF
-            
-            if key == ord('q'): # 按 'q' 鍵退出
-                print("使用者按下 'q' 鍵，退出影片分析")
-                break
-            elif key == ord('r'): # 按 'r' 鍵重設計數
-                detector.reset_counters()
-            elif key == ord('p') or key == ord(' '): # 按 'p' 鍵或空白鍵暫停/繼續
-                paused = not paused
-                if paused:
-                    print("影片已暫停，按 'p' 或空白鍵繼續")
-                else:
-                    print("影片繼續播放")
-    
+            draw_progress(processed_frame, progress, current_time, duration)
+
     finally:
         # ----- 釋放資源 -----
-        cap.release()
-        detector.cleanup()
+        release_video(cap)
+        cleanup_detector()
         cv2.destroyAllWindows()
         
         if not squat_detected and frame_count > 0:
@@ -633,23 +465,11 @@ def squat_timing_camera_mode(standard_sequence, name, gender, age):
     print("\n=== 深蹲計時 - 即時鏡頭模式 ===")
     
     # ----- 初始化攝像頭 -----
-    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    cap = open_camera(device=0, width=920, height=540, fourcc='MJPG')
     
-    # ----- 設定攝像頭解析度 -----
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 920)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 540)
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-    
-    # ----- 檢查攝像頭是否正常開啟 -----
-    if not cap.isOpened():
-        raise Exception("無法開啟攝像頭")
-    
-    # ----- 初始化檢測器 -----
-    detector = SquatDetectorWithStandard(
-        standard_sequence=standard_sequence,
-        squat_threshold=100,
-        similarity_threshold=0.6
-    )
+    # ----- 初始化檢測器（使用集中管理） -----
+    init_detector(standard_sequence, squat_threshold=100, similarity_threshold=0.6)
+    detector = get_detector()
     
     print(f"\n測試者：{name} ({gender}，{age}歲)")
     print("\n使用說明：")
@@ -696,13 +516,8 @@ def squat_timing_camera_mode(standard_sequence, name, gender, age):
                     name, gender, age = collect_user_data()
                     print(f"\n用戶資料已登記：{name} ({gender}，{age}歲)")
                 else:
-                    # 顯示結果畫面
+                    # 顯示結果畫面（保留簡單 terminal 訊息）
                     print("SQUAT DETECTED!")
-                    # cv2.putText(processed_frame, f"SQUAT DETECTED!", 
-                    #            (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 4)
-                    # cv2.putText(processed_frame, f"Time: {elapsed_time:.2f} seconds", 
-                    #            (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 3)
-            
             # ----- 檢查計時狀態 -----
             elif timing_started and not squat_detected:
                 current_time = time.time()
@@ -726,24 +541,16 @@ def squat_timing_camera_mode(standard_sequence, name, gender, age):
                     
                     timing_started = False  # 停止計時
                 else:
-                    # 顯示計時中的狀態
-                    cv2.putText(processed_frame, f"TIMING... {current_elapsed_time:.1f}s", 
-                               (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 0), 3)
-                    cv2.putText(processed_frame, "Perform a squat!", 
-                               (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 2)
+                    # 顯示計時中的狀態（改用 draw 模組）
+                    draw_timing_overlay(processed_frame, current_elapsed_time)
             else:
-                # 等待開始狀態
-                cv2.putText(processed_frame, "Press 's' to start timing test", 
-                           (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 2)
-                cv2.putText(processed_frame, "Stand ready for squat", 
-                           (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 2)
-            
-            # ----- 顯示操作提示 -----
-            cv2.putText(processed_frame, "Press 'q' to quit", 
-                       (10, processed_frame.shape[0] - 30), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1, (100, 100, 100), 2)
-            
-            # ----- 設定視窗可調整大小並顯示畫面 -----
+                # 等待開始狀態（改用 draw 模組）
+                draw_press_start_hint(processed_frame)
+
+            # ----- 顯示操作提示（退出） -----
+            draw_quit_hint(processed_frame)
+
+            # ----- 顯示畫面 -----
             cv2.namedWindow('Squat Timing Test - Camera Mode', cv2.WINDOW_NORMAL)
             cv2.imshow('Squat Timing Test - Camera Mode', processed_frame)
             
@@ -757,12 +564,12 @@ def squat_timing_camera_mode(standard_sequence, name, gender, age):
                 # 開始計時測試（只有在非計時、非顯示結果狀態才能開始）
                 timing_started = True
                 start_time = time.time()
-                detector.reset_counters()
+                reset_detector()
                 print("⏱️  計時開始！請執行深蹲動作...")
     
     finally:
         # ----- 釋放資源 -----
-        cap.release()
-        detector.cleanup()
+        release_camera(cap)
+        cleanup_detector()
         cv2.destroyAllWindows()
         print("計時測試結束")

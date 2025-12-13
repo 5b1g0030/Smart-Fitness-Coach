@@ -1,5 +1,6 @@
 import cv2              # 存取攝像頭、讀取和顯示影像、處理影像（如翻轉、加文字等）
-from models.squat_function import (load_standard_sequence_mode, camera_detection_mode,
+# 引入所有模式
+from models.squat_modes import (load_standard_sequence_mode, camera_detection_mode,
                                    analyze_standard_video_mode, test_video_analysis_mode,
                                    squat_timing_mode) 
 
@@ -15,7 +16,6 @@ def show_menu():
     print("1. 即時攝像頭檢測 (需要先有標準動作資料)")
     print("2. 分析標準深蹲影片")
     print("3. 測試影片分析")
-    print("4. 載入現有的標準動作資料")
     print("5. 測試幾秒完成深蹲")
     print("6. 退出程式")
     print("="*60)
