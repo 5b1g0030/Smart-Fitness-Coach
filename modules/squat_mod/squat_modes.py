@@ -2,15 +2,15 @@ import cv2      # 存取攝像頭、讀取和顯示影像、處理影像（如�
 import os       # 檢查檔案路徑、建立、儲存檔案
 # import csv      # 儲存csv檔案
 # import datetime # 計時器
-from models.squat_detector_with_standard import StandardSquatAnalyzer # 引入深蹲偵測器
+from modules.squat_mod.squat_detector_with_standard import StandardSquatAnalyzer # 引入深蹲偵測器
 # 新增：從 util 匯入攝像頭與影片工具
-from models.util import open_camera, release_camera, open_video, get_video_info, release_video
+from modules.util import open_camera, release_camera, open_video, get_video_info, release_video
 # 新增：從 detector_manager 匯入管理函式
-from models.detector_manager import init_detector, get_detector, reset_detector, cleanup_detector
+from modules.squat_mod.detector_manager import init_detector, get_detector, reset_detector, cleanup_detector
 # 新增：從 file.py 匯入用戶資料與檔案儲存管理
-from models.file import collect_user_data, save_test_result
+from modules.squat_mod.file import collect_user_data, save_test_result
 # 新增：匯入畫面顯示工具
-from models.draw import draw_squat_detected, draw_progress, draw_timing_overlay, draw_press_start_hint, draw_quit_hint
+from modules.squat_mod.draw import draw_squat_detected, draw_progress, draw_timing_overlay, draw_press_start_hint, draw_quit_hint
 
 # ===== 攝像頭即時檢測模式 =====
 def camera_detection_mode(standard_sequence):

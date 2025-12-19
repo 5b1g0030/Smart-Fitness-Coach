@@ -1,6 +1,5 @@
 import os
 import cv2
-import sys
 
 def open_camera(device=0, width=920, height=540, fourcc='MJPG', backend=cv2.CAP_DSHOW):
     """開啟並設定攝像頭，失敗則拋例外"""

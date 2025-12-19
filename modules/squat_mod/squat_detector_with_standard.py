@@ -3,8 +3,8 @@ import mediapipe as mp  # 進行人體姿勢偵測，提供關鍵點座標、繪
 import numpy as np      # 數值運算、陣列處理，方便影像或座標資料的計算與操作
 from dtw import dtw  # 需要安裝: pip install dtw-python
 # 新增：匯入已分離的類別
-from models.draw import draw_status_info
-from models.standard_squat_analyzer import StandardSquatAnalyzer  # 新增：匯入已分離的類別
+from modules.squat_mod.draw import draw_status_info
+from modules.squat_mod.standard_squat_analyzer import StandardSquatAnalyzer  # 新增：匯入已分離的類別
 
 # ===== 結合標準動作的深蹲檢測器(類別) =====
 # ======================================== 

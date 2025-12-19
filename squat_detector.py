@@ -1,6 +1,6 @@
 import cv2              # 存取攝像頭、讀取和顯示影像、處理影像（如翻轉、加文字等）
 # 引入所有模式
-from models.squat_modes import (load_standard_sequence_mode, camera_detection_mode,
+from modules.squat_mod.squat_modes import (load_standard_sequence_mode, camera_detection_mode,
                                    analyze_standard_video_mode, test_video_analysis_mode,
                                    squat_timing_mode) 
 

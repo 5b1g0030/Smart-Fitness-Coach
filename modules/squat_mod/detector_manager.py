@@ -1,4 +1,4 @@
-from models.squat_detector_with_standard import SquatDetectorWithStandard
+from modules.squat_mod.squat_detector_with_standard import SquatDetectorWithStandard
 
 _detector = None
 
