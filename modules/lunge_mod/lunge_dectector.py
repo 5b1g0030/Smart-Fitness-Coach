@@ -12,24 +12,34 @@ except Exception as e:
 mp_pose = mp.solutions.pose
 mp_drawing = mp.solutions.drawing_utils
 
-# Helper: angle at point B between A-B-C
+# ===== 計算膝蓋彎曲角度 =====
+# 計算「以 b 為頂點」，由點 a → b → c 形成的夾角（角度制）
 def angle_between(a, b, c):
+	# 把每個點的 x、y 拿出來，方便後面計算
 	(ax, ay) = a
 	(bx, by) = b
 	(cx, cy) = c
+	# v1：從 b 指向 a 的向量, v2：從 b 指向 c 的向量
 	v1 = (ax - bx, ay - by)
 	v2 = (cx - bx, cy - by)
+	# 向量內積: 越大 → 越接近 0°, 越小（負）→ 越接近 180°
 	dot = v1[0]*v2[0] + v1[1]*v2[1]
+	# math.hypot(x, y)  = sqrt(x*x + y*y)
+	# n1：向量 v1 的長度, n2：向量 v2 的長度
 	n1 = math.hypot(v1[0], v1[1])
 	n2 = math.hypot(v2[0], v2[1])
+	# 沒有方向，就無法定義角度
 	if n1 * n2 == 0:
 		return 0.0
+	# 計算 cos(θ)，並「夾住」範圍
 	cosang = max(-1.0, min(1.0, dot / (n1 * n2)))
+	# 反推角度（弧度 → 度）
 	return math.degrees(math.acos(cosang))
 
 def landmarks_to_point(lm, width, height):
 	return (lm.x * width, lm.y * height)
 
+# ===== 使用左右腿資訊判斷弓箭步 =====
 def is_lunge(landmarks, image_w, image_h):
 	# 使用左右腿資訊判斷弓箭步
 	# 參考：前膝 60-100°, 後膝 >150°, 軀幹與垂直角度小於 30°
@@ -52,8 +62,8 @@ def is_lunge(landmarks, image_w, image_h):
 		right_ankle = landmarks[RA]
 		left_sho = landmarks[LS]
 		right_sho = landmarks[RS]
-
 	except Exception:
+		print("發生錯誤!")
 		return (False, None)
 
 	# convert to pixel coords
@@ -63,70 +73,112 @@ def is_lunge(landmarks, image_w, image_h):
 	RK_pt = landmarks_to_point(right_knee, image_w, image_h)
 	LA_pt = landmarks_to_point(left_ankle, image_w, image_h)
 	RA_pt = landmarks_to_point(right_ankle, image_w, image_h)
-	LS_pt = landmarks_to_point(left_sho, image_w, image_h)
-	RS_pt = landmarks_to_point(right_sho, image_w, image_h)
+	# LS_pt = landmarks_to_point(left_sho, image_w, image_h)
+	# RS_pt = landmarks_to_point(right_sho, image_w, image_h)
 
 	# angles at knees
 	left_knee_angle = angle_between(LH_pt, LK_pt, LA_pt)
 	right_knee_angle = angle_between(RH_pt, RK_pt, RA_pt)
 
 	# torso: angle between shoulders and vertical (use midpoint)
-	shoulder_mid = ((LS_pt[0] + RS_pt[0]) / 2, (LS_pt[1] + RS_pt[1]) / 2)
-	hip_mid = ((LH_pt[0] + RH_pt[0]) / 2, (LH_pt[1] + RH_pt[1]) / 2)
-	# vector hip_mid -> shoulder_mid, compare with vertical vector (0,-1)
-	torso_vec = (shoulder_mid[0] - hip_mid[0], shoulder_mid[1] - hip_mid[1])
-	vertical_vec = (0, -1)
+	# shoulder_mid = ((LS_pt[0] + RS_pt[0]) / 2, (LS_pt[1] + RS_pt[1]) / 2)
+	# hip_mid = ((LH_pt[0] + RH_pt[0]) / 2, (LH_pt[1] + RH_pt[1]) / 2)
+	# # vector hip_mid -> shoulder_mid, compare with vertical vector (0,-1)
+	# torso_vec = (shoulder_mid[0] - hip_mid[0], shoulder_mid[1] - hip_mid[1])
+	# vertical_vec = (0, -1)
 	# compute torso tilt angle
-	dot = torso_vec[0]*vertical_vec[0] + torso_vec[1]*vertical_vec[1]
-	n1 = math.hypot(torso_vec[0], torso_vec[1])
-	if n1 == 0:
-		torso_tilt = 90.0
-	else:
-		cosang = max(-1.0, min(1.0, dot / n1))
-		torso_tilt = math.degrees(math.acos(cosang))
+	# dot = torso_vec[0]*vertical_vec[0] + torso_vec[1]*vertical_vec[1]
+	# n1 = math.hypot(torso_vec[0], torso_vec[1])
+	# if n1 == 0:
+	# 	torso_tilt = 90.0
+	# else:
+	# 	cosang = max(-1.0, min(1.0, dot / n1))
+	# 	torso_tilt = math.degrees(math.acos(cosang))
 
 	# Check left-front / right-front possibilities
-	# left front: left_knee 60-100, right_knee >150
-	if 60 <= left_knee_angle <= 100 and right_knee_angle >= 150 and torso_tilt <= 35:
+	# left front: left_knee 60-100, right_knee >150 and torso_tilt <= 35
+	if 60 <= left_knee_angle <= 120 and right_knee_angle >= 120:
 		return (True, "left")
 	# right front: right_knee 60-100, left_knee >150
-	if 60 <= right_knee_angle <= 100 and left_knee_angle >= 150 and torso_tilt <= 35:
+	if 60 <= right_knee_angle <= 120 and left_knee_angle >= 120:
 		return (True, "right")
+	
+	# print(f"{left_knee_angle}, {right_knee_angle}") # 除錯
+
 	return (False, None)
 
+# ===== 處理動作影格 =====
 def process_stream(cap, delete_input_after=None):
-	pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
-	count_left = 0
+	pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) # 建立偵測器
+	# 左/右側弓箭步累計計數
+	count_left = 0	
 	count_right = 0
-	prev_state_left = False
-	prev_state_right = False
-	prev_time = time.time()
-	fps = 0.0
+	# 左/右側當前是否處於「偵測到弓箭步」(bool)
+	prev_state_left = False  
+	prev_state_right = False 
+	# prev_time = time.time()  # 記錄上一個時間戳(計算當前幀與上一幀的時間差以算 FPS)
+	# fps = 0.0 # 儲存顯示用的平滑後 FPS 值
 
+	# ===== 影像串流 =====
+	cv2.namedWindow("Lunge Detector", cv2.WINDOW_NORMAL)
+	cv2.resizeWindow("Lunge Detector", 800, 800)
 	while cap.isOpened():
+		# 讀取影像
 		ret, frame = cap.read()
 		if not ret:
 			break
-		h, w = frame.shape[:2]
-		image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-		image.flags.writeable = False
-		results = pose.process(image)
-		image.flags.writeable = True
-		image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
+		h, w = frame.shape[:2] # 取影像寬高
+		image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) # BGR => RGB
+		image.flags.writeable = False # 將陣列標記為不可寫，讓 MediaPipe 可以避免不必要的複製與優化處理
+		results = pose.process(image) # 執行 MediaPipe Pose 偵測，回傳 pose_landmarks
+		image.flags.writeable = True  # 重新允許對影像寫入，以便後續在影像上畫標記或文字
+		image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR) # RBG => BGR (方便 OpenCV 取用)
 
 		lunge_detected = False
 		side = None
 		if results.pose_landmarks:
 			mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
 			lunge_detected, side = is_lunge(results.pose_landmarks.landmark, w, h)
+			# print(lunge_detected) # 除錯
 
-			# counting logic: detect transitions
+			# Debug: 用顏色標示左右腿的 hip/knee/ankle（左紅、右藍）
+			try:
+				lm = results.pose_landmarks.landmark
+				# 左側 landmark idx
+				left_idxs = [mp_pose.PoseLandmark.LEFT_HIP,
+							mp_pose.PoseLandmark.LEFT_KNEE,
+							mp_pose.PoseLandmark.LEFT_ANKLE]
+				# 右側 landmark idx
+				right_idxs = [mp_pose.PoseLandmark.RIGHT_HIP,
+							mp_pose.PoseLandmark.RIGHT_KNEE,
+							mp_pose.PoseLandmark.RIGHT_ANKLE]
+
+				for idx in left_idxs:
+					p = lm[idx]
+					vis = getattr(p, "visibility", 1.0)
+					if vis is None or vis >= 0.5:
+						x, y = int(p.x * w), int(p.y * h)
+						cv2.circle(image, (x, y), 6, (0, 0, 255), -1)  # 左紅 (B,G,R)
+
+				for idx in right_idxs:
+					p = lm[idx]
+					vis = getattr(p, "visibility", 1.0)
+					if vis is None or vis >= 0.5:
+						x, y = int(p.x * w), int(p.y * h)
+						cv2.circle(image, (x, y), 6, (255, 0, 0), -1)  # 右藍 (B,G,R)
+			except Exception:
+				pass
+			
+			# ====== 弓箭步記數 ======
+			# 左弓箭步
 			if side == "left":
 				# when left lunge detected now
 				if not prev_state_left:
 					count_left += 1
 				prev_state_left = True
 				prev_state_right = False
+			# 右弓箭步
 			elif side == "right":
 				if not prev_state_right:
 					count_right += 1
@@ -136,17 +188,16 @@ def process_stream(cap, delete_input_after=None):
 				prev_state_left = False
 				prev_state_right = False
 
-		# FPS
-		now = time.time()
-		fps = 0.9*fps + 0.1*(1.0/(now-prev_time)) if now != prev_time else fps
-		prev_time = now
-
 		# overlay
 		cv2.putText(image, f"Lunge L:{count_left} R:{count_right}", (10,30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0,255,0), 2)
 		if side:
-			cv2.putText(image, f"Detected: {side}", (10,60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,200,255), 2)
-		cv2.putText(image, f"FPS: {int(fps)}", (10,90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,0), 2)
+			print("side is Ture!")
+			cv2.putText(image, f"Detected: {side}", (10,60), cv2.FONT_HERSHEY_SIMPLEX, 2, (0,200,255), 5)
+		else:
+			cv2.putText(image, f"Detected: None", (10,60), cv2.FONT_HERSHEY_SIMPLEX, 2, (0,200,255), 5)
+		# cv2.putText(image, f"FPS: {int(fps)}", (10,90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,0), 2)
 
+		# 顯示畫面
 		cv2.imshow("Lunge Detector", image)
 		key = cv2.waitKey(1) & 0xFF
 		if key == ord('q'):
@@ -171,7 +222,7 @@ def main():
 	choice = input("輸入數字 (1 或 2)：").strip()
 
 	if choice == "1":
-		cap = cv2.VideoCapture(0)
+		cap = cv2.VideoCapture(0) # 開啟相機
 		if not cap.isOpened():
 			print("無法開啟相機")
 			return
