@@ -107,6 +107,55 @@ def is_lunge(landmarks, image_w, image_h):
 
 	return (False, None)
 
+# ===== 繪製左右腳骨架 =====
+# 輸入 畫面、左右腿骨架座標、 
+def draw_lags(image, left_idxs, right_idxs, lm, w, h):
+	for idx in left_idxs:
+		p = lm[idx]
+		vis = getattr(p, "visibility", 1.0)
+		if vis is None or vis >= 0.5:
+			x, y = int(p.x * w), int(p.y * h)
+			cv2.circle(image, (x, y), 6, (0, 255, 0), -1)  # 左綠 (B,G,R)
+	for idx in right_idxs:
+		p = lm[idx]
+		vis = getattr(p, "visibility", 1.0)
+		if vis is None or vis >= 0.5:
+			x, y = int(p.x * w), int(p.y * h)
+			cv2.circle(image, (x, y), 6, (255, 0, 0), -1)  # 右藍 (B,G,R)
+
+# ===== 繪製判定結果 =====
+# 輸入 畫面、左右弓箭步次數
+def draw_result(image, side, count_left, count_right):
+	cv2.putText(image, f"Lunge L:{count_left} R:{count_right}", (10,30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0,255,0), 2)
+	if side:
+		print("side is Ture!")
+		cv2.putText(image, f"Detected: {side}", (10,60), cv2.FONT_HERSHEY_SIMPLEX, 2, (0,200,255), 5)
+	else:
+		cv2.putText(image, f"Detected: None", (10,60), cv2.FONT_HERSHEY_SIMPLEX, 2, (0,200,255), 5)
+
+# ===== 弓箭步記數 =====
+# 傳入 判定結果、左/右側當前是否處於「偵測到弓箭步」(bool) 
+def lunge_count(side, prev_state_left, prev_state_right, count_left, count_right):
+	# 左弓箭步
+	if side == "left":
+		# when left lunge detected now
+		if not prev_state_left:
+			count_left += 1
+		prev_state_left = True
+		prev_state_right = False
+	# 右弓箭步
+	elif side == "right":
+		if not prev_state_right:
+			count_right += 1
+		prev_state_right = True
+		prev_state_left = False
+	else:
+		prev_state_left = False
+		prev_state_right = False
+	
+	return count_left, count_right
+
+
 # ===== 處理動作影格 =====
 def process_stream(cap, delete_input_after=None):
 	pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) # 建立偵測器
@@ -116,8 +165,6 @@ def process_stream(cap, delete_input_after=None):
 	# 左/右側當前是否處於「偵測到弓箭步」(bool)
 	prev_state_left = False  
 	prev_state_right = False 
-	# prev_time = time.time()  # 記錄上一個時間戳(計算當前幀與上一幀的時間差以算 FPS)
-	# fps = 0.0 # 儲存顯示用的平滑後 FPS 值
 
 	# ===== 影像串流 =====
 	cv2.namedWindow("Lunge Detector", cv2.WINDOW_NORMAL)
@@ -153,49 +200,25 @@ def process_stream(cap, delete_input_after=None):
 				right_idxs = [mp_pose.PoseLandmark.RIGHT_HIP,
 							mp_pose.PoseLandmark.RIGHT_KNEE,
 							mp_pose.PoseLandmark.RIGHT_ANKLE]
-
-				for idx in left_idxs:
-					p = lm[idx]
-					vis = getattr(p, "visibility", 1.0)
-					if vis is None or vis >= 0.5:
-						x, y = int(p.x * w), int(p.y * h)
-						cv2.circle(image, (x, y), 6, (0, 0, 255), -1)  # 左紅 (B,G,R)
-
-				for idx in right_idxs:
-					p = lm[idx]
-					vis = getattr(p, "visibility", 1.0)
-					if vis is None or vis >= 0.5:
-						x, y = int(p.x * w), int(p.y * h)
-						cv2.circle(image, (x, y), 6, (255, 0, 0), -1)  # 右藍 (B,G,R)
+				
+				# 繪製左右腿骨架(點位顏色不同)
+				draw_lags(image, left_idxs, right_idxs, lm, w, h)
+				
 			except Exception:
 				pass
 			
-			# ====== 弓箭步記數 ======
-			# 左弓箭步
-			if side == "left":
-				# when left lunge detected now
-				if not prev_state_left:
-					count_left += 1
-				prev_state_left = True
-				prev_state_right = False
-			# 右弓箭步
-			elif side == "right":
-				if not prev_state_right:
-					count_right += 1
-				prev_state_right = True
-				prev_state_left = False
-			else:
-				prev_state_left = False
-				prev_state_right = False
+			# 弓箭步記數 
+			count_left, count_right = lunge_count(side, prev_state_left, prev_state_right, count_left, count_right)
 
-		# overlay
-		cv2.putText(image, f"Lunge L:{count_left} R:{count_right}", (10,30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0,255,0), 2)
-		if side:
-			print("side is Ture!")
-			cv2.putText(image, f"Detected: {side}", (10,60), cv2.FONT_HERSHEY_SIMPLEX, 2, (0,200,255), 5)
-		else:
-			cv2.putText(image, f"Detected: None", (10,60), cv2.FONT_HERSHEY_SIMPLEX, 2, (0,200,255), 5)
-		# cv2.putText(image, f"FPS: {int(fps)}", (10,90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,0), 2)
+
+		# 顯示判定結果
+		draw_result(image, side, count_left, count_right)
+		# cv2.putText(image, f"Lunge L:{count_left} R:{count_right}", (10,30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0,255,0), 2)
+		# if side:
+		# 	print("side is Ture!")
+		# 	cv2.putText(image, f"Detected: {side}", (10,60), cv2.FONT_HERSHEY_SIMPLEX, 2, (0,200,255), 5)
+		# else:
+		# 	cv2.putText(image, f"Detected: None", (10,60), cv2.FONT_HERSHEY_SIMPLEX, 2, (0,200,255), 5)
 
 		# 顯示畫面
 		cv2.imshow("Lunge Detector", image)
